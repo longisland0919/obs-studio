@@ -12,6 +12,10 @@ static inline void add_path_font(const char *path)
 	FT_Face face;
 	FT_Long idx = 0;
 	FT_Long max_faces = 1;
+	if (!path) {
+		blog(LOG_INFO, "[Text-FreeType] add_path_font. Empty font path");
+		return;
+	}
 
 	while (idx < max_faces) {
 		if (FT_New_Face(ft2_lib, path, idx, &face) != 0)
@@ -38,8 +42,11 @@ static void add_path_fonts(NSFileManager *file_manager, NSString *path)
 							isDirectory:&is_dir];
 
 		if (folder_exists && is_dir) {
+			const char *full_path_str = [full_path UTF8String];
+			blog(LOG_DEBUG, "[Text-FreeType] add_path_fonts: Add full path font %s", full_path_str);
 			add_path_fonts(file_manager, full_path);
 		} else {
+			blog(LOG_DEBUG, "[Text-FreeType] add_path_fonts: Add full path fileSystemRepresentation %s", full_path.fileSystemRepresentation);
 			add_path_font(full_path.fileSystemRepresentation);
 		}
 	}
@@ -49,6 +56,7 @@ void load_os_font_list(void)
 {
 	@autoreleasepool {
 		BOOL is_dir;
+		BOOL is_dir_v2;
 		NSArray *paths = NSSearchPathForDirectoriesInDomains(
 			NSLibraryDirectory, NSAllDomainsMask, true);
 
@@ -62,10 +70,25 @@ void load_os_font_list(void)
 				fileExistsAtPath:font_path
 				     isDirectory:&is_dir];
 
-			if (folder_exists && is_dir)
+			if (folder_exists && is_dir) {
+				const char *font_path_str = [font_path UTF8String];
+				blog(LOG_DEBUG, "[Text-FreeType] load_os_font_list: Add font path %s", font_path_str);
 				add_path_fonts(file_manager, font_path);
-		}
+			}
 
+			// support /System/Library/AssetsV2/
+			NSString *font_path_v2 =
+				[path stringByAppendingPathComponent:@"AssetsV2"];
+			bool folder_v2_exists = [file_manager
+				fileExistsAtPath:font_path_v2
+				     isDirectory:&is_dir_v2];
+			if (folder_v2_exists && is_dir_v2) {
+				const char *font_path_str = [font_path_v2 UTF8String];
+				blog(LOG_DEBUG, "[Text-FreeType] load_os_font_list: Add font path v2 %s", font_path_str);
+				add_path_fonts(file_manager, font_path_v2);
+			}
+		}
+		blog(LOG_DEBUG, "[Text-FreeType] load_os_font_list complete");
 		save_font_list();
 	}
 }
@@ -99,9 +122,11 @@ static uint32_t add_font_checksum_path(uint32_t checksum,
 uint32_t get_font_checksum(void)
 {
 	uint32_t checksum = 0;
+	uint32_t checksum_v2 = 0;
 
 	@autoreleasepool {
 		BOOL is_dir;
+		BOOL is_dir_v2;
 		NSArray *paths = NSSearchPathForDirectoriesInDomains(
 			NSLibraryDirectory, NSAllDomainsMask, true);
 
@@ -110,7 +135,7 @@ uint32_t get_font_checksum(void)
 				[NSFileManager defaultManager];
 			NSString *font_path =
 				[path stringByAppendingPathComponent:@"Fonts"];
-
+	
 			bool folder_exists = [file_manager
 				fileExistsAtPath:font_path
 				     isDirectory:&is_dir];
@@ -118,8 +143,19 @@ uint32_t get_font_checksum(void)
 			if (folder_exists && is_dir)
 				checksum = add_font_checksum_path(
 					checksum, file_manager, font_path);
+
+			// support /System/Library/AssetsV2/
+			NSString *font_path_v2 =
+				[path stringByAppendingPathComponent:@"AssetsV2"];
+			bool folder_v2_exists = [file_manager
+				fileExistsAtPath:font_path_v2
+				     isDirectory:&is_dir_v2];
+			if (folder_v2_exists && is_dir_v2) {
+				checksum_v2 = add_font_checksum_path(
+					checksum_v2, file_manager, font_path_v2);
+			}
 		}
 	}
-
-	return checksum;
+	blog(LOG_DEBUG, "[Text-FreeType] get_font_checksum complete");
+	return checksum + checksum_v2;
 }

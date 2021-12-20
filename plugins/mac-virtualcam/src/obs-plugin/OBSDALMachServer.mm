@@ -8,8 +8,8 @@
 #import "OBSDALMachServer.h"
 #import <Foundation/Foundation.h>
 #include <obs-module.h>
-#include "MachProtocol.h"
 #include "Defines.h"
+#include "MachProtocol.h"
 
 @interface OBSDALMachServer () <NSPortDelegate>
 @property NSPort *port;
@@ -30,9 +30,12 @@
 - (void)dealloc
 {
 	blog(LOG_DEBUG, "tearing down MachServer");
-	[self.runLoop removePort:self.port forMode:NSDefaultRunLoopMode];
-	[self.port invalidate];
-	self.port.delegate = nil;
+	if (self.port)
+	{
+		[self.runLoop removePort:self.port forMode:NSDefaultRunLoopMode];
+		[self.port invalidate];
+		self.port.delegate = nil;
+	}
 }
 
 - (void)run
@@ -76,6 +79,9 @@
 			     "mach server received connect message from port %d!",
 			     ((NSMachPort *)message.sendPort).machPort);
 			[self.clientPorts addObject:message.sendPort];
+			if (self.machClientConnectStateChanged) {
+      		    self.machClientConnectStateChanged(MachClientConnectStateConnect);
+    		}
 		}
 		break;
 	default:
@@ -120,6 +126,11 @@
 
 	// Remove dead ports if necessary
 	[self.clientPorts minusSet:removedPorts];
+	for (int i = 0; i < removedPorts.count; i++) {
+		if (self.machClientConnectStateChanged) {
+      		self.machClientConnectStateChanged(MachClientConnectStateDisconnect);
+    	}
+	}
 }
 
 - (void)sendFrameWithSize:(NSSize)size
@@ -158,12 +169,19 @@
 			dataWithBytesNoCopy:(void *)frameBytes
 				     length:size.width * size.height * 2
 			       freeWhenDone:NO];
+
+		BOOL mirror = self.mirror;
+		NSData *mirrorData = [NSData dataWithBytes:&mirror
+						    length:sizeof(mirror)];
 		[self sendMessageToClientsWithMsgId:MachMsgIdFrame
 					 components:@[
-						 widthData, heightData,
-						 timestampData, frameData,
+						 widthData, 
+						 heightData,
+						 timestampData, 
+						 frameData,
 						 fpsNumeratorData,
-						 fpsDenominatorData
+						 fpsDenominatorData,
+						 mirrorData
 					 ]];
 	}
 }

@@ -16,6 +16,11 @@
 
 #pragma once
 
+static inline long os_atomic_add_long(volatile long *ptr, long val)
+{
+	return __atomic_add_fetch(ptr, val, __ATOMIC_SEQ_CST);
+}
+
 static inline long os_atomic_inc_long(volatile long *val)
 {
 	return __atomic_add_fetch(val, 1, __ATOMIC_SEQ_CST);

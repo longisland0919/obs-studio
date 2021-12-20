@@ -610,9 +610,9 @@ static void obs_free_audio(void)
 	da_free(audio->monitors);
 	bfree(audio->monitoring_device_name);
 	bfree(audio->monitoring_device_id);
-	pthread_mutex_destroy(&audio->monitoring_mutex);
 
-	memset(audio, 0, sizeof(struct obs_core_audio));
+	memset(audio, 0, sizeof(struct obs_core_audio) - sizeof(pthread_mutex_t));
+	pthread_mutex_destroy(&audio->monitoring_mutex);
 }
 
 static bool obs_init_data(void)
@@ -867,8 +867,8 @@ static bool obs_init(const char *locale, const char *module_config_path,
 		return false;
 	if (!obs_init_handlers())
 		return false;
-	if (!obs_init_hotkeys())
-		return false;
+//	if (!obs_init_hotkeys())
+//		return false;
 
 	if (module_config_path)
 		obs->module_config_path = bstrdup(module_config_path);
@@ -895,10 +895,9 @@ char *obs_find_data_file(const char *file)
 {
 	struct dstr path = {0};
 
-	char *result = find_libobs_data_file(file);
-	if (result)
-		return result;
-
+//	char *result = find_libobs_data_file(file);
+//	if (result)
+//		return result;
 	for (size_t i = 0; i < core_module_paths.num; ++i) {
 		if (check_path(file, core_module_paths.array[i].array, &path))
 			return path.array;
@@ -1039,7 +1038,7 @@ void obs_shutdown(void)
 	obs_free_audio();
 	obs_free_data();
 	obs_free_video();
-	obs_free_hotkeys();
+//	obs_free_hotkeys();
 	obs_free_graphics();
 	proc_handler_destroy(obs->procs);
 	signal_handler_destroy(obs->signals);
@@ -1501,6 +1500,46 @@ void obs_enum_scenes(bool (*enum_proc)(void *, obs_source_t *), void *param)
 	}
 
 	pthread_mutex_unlock(&obs->data.sources_mutex);
+}
+
+bool source_ref_enum_callback(void *data, obs_source_t *source)
+{
+	obs_source_t ** checked_ref = (obs_source_t **)data;
+	
+	if (source == *checked_ref)
+		*checked_ref = NULL;
+
+	return true;
+}
+
+bool scene_ref_enum_callback(void *data, obs_scene_t *source)
+{
+	obs_scene_t ** checked_ref = (obs_scene_t **)data;
+	
+	if (source == *checked_ref)
+		*checked_ref = NULL;
+
+	return true;
+}
+
+bool obs_scene_is_present(obs_scene_t * checking_scene)
+{
+	if (checking_scene == NULL)
+		return false;
+
+	obs_enum_scenes(scene_ref_enum_callback, &checking_scene);
+
+	return checking_scene == NULL;
+}
+ 
+bool obs_source_is_present(obs_source_t * checking_source)
+{
+	if (checking_source == NULL)
+		return false;
+
+	obs_enum_sources(source_ref_enum_callback, &checking_source);
+
+	return checking_source == NULL;
 }
 
 static inline void obs_enum(void *pstart, pthread_mutex_t *mutex, void *proc,
@@ -2353,8 +2392,8 @@ void stop_raw_video(video_t *v,
 		    void *param)
 {
 	struct obs_core_video *video = &obs->video;
-	os_atomic_dec_long(&video->raw_active);
 	video_output_disconnect(v, callback, param);
+	os_atomic_dec_long(&video->raw_active);
 }
 
 void obs_add_raw_video_callback(const struct video_scale_info *conversion,

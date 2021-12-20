@@ -73,6 +73,7 @@ struct video_output {
 
 	pthread_mutex_t input_mutex;
 	DARRAY(struct video_input) inputs;
+	volatile long repeat_input;
 
 	size_t available_frames;
 	size_t first_added;
@@ -152,6 +153,12 @@ static inline bool video_output_cur_frame(struct video_output *video)
 	complete = --frame_info->count == 0;
 	skipped = frame_info->skipped > 0;
 
+	if (!complete && !os_atomic_load_long(&video->repeat_input)){
+		frame_info->count = 0;
+		os_atomic_add_long(&video->skipped_frames, frame_info->skipped);
+		frame_info->skipped = 0;
+		complete = true;
+	}
 	if (complete) {
 		if (++video->first_added == video->info.cache_size)
 			video->first_added = 0;
@@ -215,8 +222,8 @@ static inline void init_cache(struct video_output *video)
 		struct video_frame *frame;
 		frame = (struct video_frame *)&video->cache[i];
 
-		video_frame_init(frame, video->info.format, video->info.width,
-				 video->info.height);
+		video_frame_init(frame, video->info.format,
+					 video->info.width, video->info.height);
 	}
 
 	video->available_frames = video->info.cache_size;
@@ -290,7 +297,7 @@ static size_t video_get_input_idx(const video_t *video,
 {
 	for (size_t i = 0; i < video->inputs.num; i++) {
 		struct video_input *input = video->inputs.array + i;
-		if (input->callback == callback && input->param == param)
+		if (input != NULL && input->callback == callback && input->param == param)
 			return i;
 	}
 
@@ -338,6 +345,21 @@ static inline void reset_frames(video_t *video)
 {
 	os_atomic_set_long(&video->skipped_frames, 0);
 	os_atomic_set_long(&video->total_frames, 0);
+}
+
+void video_repeat_dec(video_t * video)
+{
+	if (!os_atomic_load_long(&video->repeat_input))
+	{
+		blog(LOG_WARNING, "video_repeat_remove repeat_input == 0, are you remove more?");
+		return;
+	}
+	os_atomic_dec_long(&video->repeat_input);
+}
+
+void video_repeat_inc(video_t * video)
+{
+	os_atomic_inc_long(&video->repeat_input);
 }
 
 bool video_output_connect(
@@ -546,12 +568,12 @@ double video_output_get_frame_rate(const video_t *video)
 
 uint32_t video_output_get_skipped_frames(const video_t *video)
 {
-	return (uint32_t)os_atomic_load_long(&video->skipped_frames);
+	return video ? (uint32_t)os_atomic_load_long(&video->skipped_frames) : 0;
 }
 
 uint32_t video_output_get_total_frames(const video_t *video)
 {
-	return (uint32_t)os_atomic_load_long(&video->total_frames);
+	return video ? (uint32_t)os_atomic_load_long(&video->total_frames) : 0;
 }
 
 /* Note: These four functions below are a very slight bit of a hack.  If the

@@ -934,6 +934,9 @@ EXPORT gs_texture_t *gs_texture_create_from_dmabuf(
 
 #endif
 
+/* SLOBS custom functions */
+EXPORT void gs_rebuild_device();
+
 /* inline functions used by modules */
 
 static inline uint32_t gs_get_format_bpp(enum gs_color_format format)

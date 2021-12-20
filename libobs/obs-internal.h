@@ -36,7 +36,7 @@
 
 #include "obs.h"
 
-#include <caption/caption.h>
+//#include <caption/caption.h>
 
 #define NUM_TEXTURES 2
 #define NUM_CHANNELS 3
@@ -335,10 +335,10 @@ struct obs_core_audio {
 
 	float user_volume;
 
-	pthread_mutex_t monitoring_mutex;
 	DARRAY(struct audio_monitor *) monitors;
 	char *monitoring_device_name;
 	char *monitoring_device_id;
+	pthread_mutex_t monitoring_mutex;
 };
 
 /* user sources, output channels, and displays */

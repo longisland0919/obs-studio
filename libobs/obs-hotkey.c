@@ -24,13 +24,13 @@ static inline bool lock(void)
 	if (!obs)
 		return false;
 
-	pthread_mutex_lock(&obs->hotkeys.mutex);
+	// pthread_mutex_lock(&obs->hotkeys.mutex); Not hotkey thread running
 	return true;
 }
 
 static inline void unlock(void)
 {
-	pthread_mutex_unlock(&obs->hotkeys.mutex);
+	// pthread_mutex_unlock(&obs->hotkeys.mutex); Not hotkey thread running
 }
 
 obs_hotkey_id obs_hotkey_get_id(const obs_hotkey_t *key)
@@ -40,22 +40,30 @@ obs_hotkey_id obs_hotkey_get_id(const obs_hotkey_t *key)
 
 const char *obs_hotkey_get_name(const obs_hotkey_t *key)
 {
+    if (!key)
+        return NULL;
 	return key->name;
 }
 
 const char *obs_hotkey_get_description(const obs_hotkey_t *key)
 {
+    if (!key)
+        return NULL;
 	return key->description;
 }
 
 obs_hotkey_registerer_t obs_hotkey_get_registerer_type(const obs_hotkey_t *key)
 {
+    if (!key)
+        return OBS_HOTKEY_REGISTERER_NONE;
 	return key->registerer_type;
 }
 
 void *obs_hotkey_get_registerer(const obs_hotkey_t *key)
 {
-	return key->registerer;
+    if (!key)
+        return NULL;
+    return key->registerer;
 }
 
 obs_hotkey_id obs_hotkey_get_pair_partner_id(const obs_hotkey_t *key)

@@ -266,6 +266,9 @@ extern void video_output_dec_texture_encoders(video_t *video);
 extern void video_output_inc_texture_frames(video_t *video);
 extern void video_output_inc_texture_skipped_frames(video_t *video);
 
+EXPORT void video_repeat_dec(video_t * video);
+EXPORT void video_repeat_inc(video_t * video);
+
 #ifdef __cplusplus
 }
 #endif

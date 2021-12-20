@@ -1804,8 +1804,8 @@ void OBSBasic::OBSInit()
 	ResetOutputs();
 	CreateHotkeys();
 
-	if (!InitService())
-		throw "Failed to initialize service";
+//	if (!InitService())
+//		throw "Failed to initialize service";
 
 	InitPrimitives();
 

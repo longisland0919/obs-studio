@@ -93,8 +93,13 @@ static bool load_ingests(const char *json, bool write_file)
 	cache_old = obs_module_config_path("twitch_ingests.json");
 	cache_new = obs_module_config_path("twitch_ingests.new.json");
 
-	os_quick_write_utf8_file(cache_new, json, strlen(json), false);
-	os_safe_replace(cache_old, cache_new, NULL);
+	if(cache_old && cache_new)
+	{
+		os_quick_write_utf8_file(cache_new, json, strlen(json), false);
+		os_safe_replace(cache_old, cache_new, NULL);
+	} else {
+		success = false;
+	}
 
 	bfree(cache_old);
 	bfree(cache_new);
@@ -142,6 +147,7 @@ struct twitch_ingest twitch_ingest(size_t idx)
 	struct twitch_ingest ingest;
 
 	if (cur_ingests.num <= idx) {
+		blog(LOG_WARNING, "Invalid response from Twitch's ingests API");
 		ingest.name = NULL;
 		ingest.url = NULL;
 	} else {

@@ -301,6 +301,8 @@ static bool nvenc_reconfigure(void *data, obs_data_t *settings)
 {
 #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(58, 19, 101)
 	struct nvenc_encoder *enc = data;
+	if (!enc->context) 
+		return false;
 
 	const int64_t bitrate = obs_data_get_int(settings, "bitrate");
 	const char *rc = obs_data_get_string(settings, "rate_control");

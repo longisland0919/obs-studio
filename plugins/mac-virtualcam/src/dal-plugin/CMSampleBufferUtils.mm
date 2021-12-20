@@ -9,6 +9,56 @@
 
 #include "Logging.h"
 
+
+// void doHorrizontalMirror(uint32_t height, uint32_t width, const uint8_t * source,
+//     uint8_t *dest)
+// {
+//     int linesize = width * 2;
+//     for (int y = 0; y < height; y++) {
+//         for (int x = 0; x < linesize; x+=4) {
+//             dest[y*linesize + x] = source[y*linesize + linesize - x];
+//             dest[y*linesize + x + 1] = source[y*linesize + linesize - x - 1];
+//             dest[y*linesize + x + 2] = source[y*linesize + linesize - x - 2];
+//             dest[y*linesize + x + 3] = source[y*linesize + linesize - x - 3];
+//         }
+//     }
+// }
+
+void doHorrizontalMirror(uint32_t H, uint32_t W,
+    uint8_t *pIn)
+{
+ 	unsigned char *pIn_start = NULL;
+	unsigned char *pOut_end = NULL;
+	int j = 0,k = 0;
+	for (int i = 0;i < H;i++) {
+		pIn_start = pIn + 2 * i * W;
+		// pOut_end=pIn+2*i*W+2*W;
+		pOut_end = pIn + 2 * i * W;
+		k= 2 * W;
+		j= 0;
+		unsigned char tmp;
+		for (j = 0; j < k; j += 4) {
+			tmp = *(pIn_start + j);
+			*(pIn_start + j) = *(pIn_start + 2 * W - 4 - j);
+			*(pIn_start+2*W-4-j)=tmp;
+			
+			tmp=*(pIn_start+j+1);
+			*(pIn_start+j+1)=*(pIn_start+2*W-1-j);
+			*(pIn_start+2*W-1-j)=tmp;
+
+			tmp=*(pIn_start+j+2);
+			*(pIn_start+j+2)=*(pIn_start+2*W-2-j);
+			*(pIn_start+2*W-2-j)=tmp;
+
+			tmp=*(pIn_start+j+3);
+			*(pIn_start+j+3)=*(pIn_start+2*W-3-j);
+			*(pIn_start+2*W-3-j)=tmp;
+
+			k=k-4;			
+		}
+	}
+}
+
 /*!
 CMSampleBufferCreateFromData
 
@@ -17,7 +67,7 @@ Creates a CMSampleBuffer by copying bytes from NSData into a CVPixelBuffer.
 OSStatus CMSampleBufferCreateFromData(NSSize size,
 				      CMSampleTimingInfo timingInfo,
 				      UInt64 sequenceNumber, NSData *data,
-				      CMSampleBufferRef *sampleBuffer)
+				      CMSampleBufferRef *sampleBuffer, bool mirror)
 {
 	OSStatus err = noErr;
 
@@ -31,24 +81,18 @@ OSStatus CMSampleBufferCreateFromData(NSSize size,
 		return err;
 	}
 
-	// Generate the video format description from that pixel buffer
-	CMFormatDescriptionRef format;
-	err = CMVideoFormatDescriptionCreateForImageBuffer(NULL, pixelBuffer,
-							   &format);
-	if (err != noErr) {
-		DLog(@"CMVideoFormatDescriptionCreateForImageBuffer err %d",
-		     err);
-		return err;
-	}
-
 	// Copy memory into the pixel buffer
 	CVPixelBufferLockBaseAddress(pixelBuffer, 0);
 	uint8_t *dest =
 		(uint8_t *)CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0);
 	uint8_t *src = (uint8_t *)data.bytes;
 
+	if (mirror) {
+		doHorrizontalMirror(size.height, size.width, src);
+	}
+
 	size_t destBytesPerRow =
-		CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0);
+		CVPixelBufferGetBytesPerRow(pixelBuffer);
 	size_t srcBytesPerRow = size.width * 2;
 
 	// Sometimes CVPixelBufferCreate will create a pixelbuffer that's a different
@@ -63,8 +107,22 @@ OSStatus CMSampleBufferCreateFromData(NSSize size,
 			dest += destBytesPerRow;
 		}
 	}
+	
+	// NSLog(@"data length: %d, cal: %f, srcBytesPerRow: %d, destBytesPerRow: %d, width: %f, height: %f, destTotal: %d", data.length, size.width * size.height * 2, srcBytesPerRow, destBytesPerRow, size.width, size.height, sizeof(dest));
+
+
 
 	CVPixelBufferUnlockBaseAddress(pixelBuffer, 0);
+
+	// Generate the video format description from that pixel buffer
+	CMFormatDescriptionRef format;
+	err = CMVideoFormatDescriptionCreateForImageBuffer(NULL, pixelBuffer,
+							   &format);
+	if (err != noErr) {
+		DLog(@"CMVideoFormatDescriptionCreateForImageBuffer err %d",
+		     err);
+		return err;
+	}
 
 	err = CMIOSampleBufferCreateForImageBuffer(kCFAllocatorDefault,
 						   pixelBuffer, format,

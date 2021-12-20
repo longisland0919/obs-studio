@@ -5,13 +5,13 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>obs-mac-virtualcam</string>
+	<string>vizard-mac-virtualcam</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.obsproject.obs-mac-virtualcam.dal-plugin</string>
+	<string>ai.vizard.vizard-studio-mac-virtualcam.dal-plugin</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>OBS Virtual Camera</string>
+	<string>Vizard Virtual Camera</string>
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleSupportedPlatforms</key>
@@ -20,21 +20,21 @@
 	</array>
 	<key>CFPlugInFactories</key>
 	<dict>
-		<key>7E950B8C-5E49-4B9E-B7D0-B3608A08E8F6</key>
+		<key>aa31a3b5-4c8a-44a1-aab0-d3c42a1410d8</key>
 		<string>PlugInMain</string>
 	</dict>
 	<key>CFPlugInTypes</key>
 	<dict>
 		<key>30010C1C-93BF-11D8-8B5B-000A95AF9C6A</key>
 		<array>
-			<string>7E950B8C-5E49-4B9E-B7D0-B3608A08E8F6</string>
+			<string>aa31a3b5-4c8a-44a1-aab0-d3c42a1410d8</string>
 		</array>
 	</dict>
 	<key>LSMinimumSystemVersion</key>
 	<string>10.13</string>
 	<key>CMIOHardwareAssistantServiceNames</key>
 	<array>
-		<string>com.obsproject.obs-mac-virtualcam.server</string>
+		<string>ai.vizard.vizard-studio-mac-virtualcam.server</string>
 	</array>
 </dict>
 </plist>

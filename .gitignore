@@ -39,9 +39,10 @@ GeneratedFiles/
 .moc/
 /UI/obs.rc
 .vscode/
+/CI/scripts/macos/Brewfile.lock.json
 
 
-
+/packed_build/
 /other/
 
 #make stuff
@@ -99,3 +100,9 @@ tags
 .DS_Store
 */.DS_Store
 */**/.DS_Store
+
+#do not ignore
+!/plugins/obs-filters/background-matting/apple/plugins/
+!/plugins/obs-filters/background-matting/apple/plugins/libtensorflowlite_c.dylib
+!/plugins/obs-filters/background-matting/win/plugins/
+!/plugins/obs-filters/background-matting/win/plugins/tensorflowlite_c.dll

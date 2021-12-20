@@ -213,6 +213,7 @@ static void add_connection(struct obs_encoder *encoder)
 		} else {
 			start_raw_video(encoder->media, &info, receive_video,
 					encoder);
+			video_repeat_inc(encoder->media);
 		}
 	}
 
@@ -229,6 +230,7 @@ static void remove_connection(struct obs_encoder *encoder, bool shutdown)
 			stop_gpu_encode(encoder);
 		} else {
 			stop_raw_video(encoder->media, receive_video, encoder);
+			video_repeat_dec(encoder->media);
 		}
 	}
 

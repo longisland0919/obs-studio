@@ -10,7 +10,7 @@
 OSStatus CMSampleBufferCreateFromData(NSSize size,
 				      CMSampleTimingInfo timingInfo,
 				      UInt64 sequenceNumber, NSData *data,
-				      CMSampleBufferRef *sampleBuffer);
+				      CMSampleBufferRef *sampleBuffer, bool mirror);
 
 OSStatus CMSampleBufferCreateFromDataNoCopy(NSSize size,
 					    CMSampleTimingInfo timingInfo,

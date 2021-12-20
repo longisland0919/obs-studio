@@ -83,6 +83,7 @@ using namespace DShow;
 #define TEXT_DWNS           obs_module_text("DeactivateWhenNotShowing")
 
 /* clang-format on */
+const int DShowDeviceShutdowTimeout = 5 * 1000;
 
 enum ResType {
 	ResType_Preferred,
@@ -197,6 +198,7 @@ struct DShowInput {
 	long lastRotation = 0;
 
 	WinHandle semaphore;
+	HANDLE shutdown_started;
 	WinHandle activated_event;
 	WinHandle thread;
 	CriticalSection mutex;
@@ -232,6 +234,10 @@ struct DShowInput {
 		semaphore = CreateSemaphore(nullptr, 0, 0x7FFFFFFF, nullptr);
 		if (!semaphore)
 			throw "Failed to create semaphore";
+
+		shutdown_started = CreateEvent(nullptr, true, false, nullptr); 
+		if (!shutdown_started)
+			throw "Failed to create shutdown_started";
 
 		activated_event = CreateEvent(nullptr, false, false, nullptr);
 		if (!activated_event)
@@ -333,6 +339,8 @@ void DShowInput::DShowLoop()
 				actions.erase(actions.begin());
 			}
 		}
+		if (action != Action::None)
+			blog(LOG_INFO, "DShowLoop process action %d for %08X", action, this);
 
 		switch (action) {
 		case Action::Activate:
@@ -355,6 +363,8 @@ void DShowInput::DShowLoop()
 			break;
 
 		case Action::Shutdown:
+			SetEvent(shutdown_started);
+			device.CloseDialog();
 			device.ShutdownGraph();
 			return;
 
@@ -681,10 +691,21 @@ struct PropertiesData {
 	vector<VideoDevice> devices;
 	vector<AudioDevice> audioDevices;
 
-	bool GetDevice(VideoDevice &device, const char *encoded_id) const
+	bool GetDevice(VideoDevice &device, const char *encoded_id)
 	{
 		DeviceId deviceId;
-		DecodeDeviceId(deviceId, encoded_id);
+		if (!DecodeDeviceId(deviceId, encoded_id)) {
+			blog(LOG_WARNING, "PropertiesData.GetDevice DecodeDeviceId for %s failed", encoded_id);
+			return false;
+		}
+
+		if (!devices.size()) {
+			Device::EnumVideoDevices(devices, true);
+			if (!devices.size()) {
+				blog(LOG_WARNING, "PropertiesData devices size is 0");
+				return false;
+			}
+		}
 
 		for (const VideoDevice &curDevice : devices) {
 			if (deviceId.name == curDevice.name &&
@@ -881,7 +902,7 @@ bool DShowInput::UpdateVideoConfig(obs_data_t *settings)
 	}
 
 	PropertiesData data;
-	Device::EnumVideoDevices(data.devices);
+	Device::EnumVideoDevices(data.devices, true);
 	VideoDevice dev;
 	if (!data.GetDevice(dev, video_device_id.c_str())) {
 		blog(LOG_WARNING, "%s: data.GetDevice failed",
@@ -1097,12 +1118,19 @@ DShowInput::GetColorRange(obs_data_t *settings) const
 
 inline bool DShowInput::Activate(obs_data_t *settings)
 {
+	blog(LOG_INFO, "Activate device '%s'", obs_source_get_name(source));
+	device.GetAccess();
+
 	if (!device.ResetGraph())
+	{
+		device.ReleaseAccess();
 		return false;
+	}
 
 	if (!UpdateVideoConfig(settings)) {
 		blog(LOG_WARNING, "%s: Video configuration failed",
-		     obs_source_get_name(source));
+				obs_source_get_name(source));
+		device.ReleaseAccess();
 		return false;
 	}
 
@@ -1112,11 +1140,15 @@ inline bool DShowInput::Activate(obs_data_t *settings)
 		     "audio",
 		     obs_source_get_name(source));
 
-	if (!device.ConnectFilters())
+	if (!device.ConnectFilters()) {
+		device.ReleaseAccess();
 		return false;
+	}
 
-	if (device.Start() != Result::Success)
+	if (device.Start() != Result::Success) {
+		device.ReleaseAccess();
 		return false;
+	}
 
 	enum video_colorspace cs = GetColorSpace(settings);
 	range = GetColorRange(settings);
@@ -1133,13 +1165,19 @@ inline bool DShowInput::Activate(obs_data_t *settings)
 		     cs);
 	}
 
+	device.ReleaseAccess();
 	return true;
 }
 
 inline void DShowInput::Deactivate()
 {
+	blog(LOG_INFO, "Deactivate device '%s'", obs_source_get_name(source));
+
+	device.GetAccess();
 	device.ResetGraph();
-	obs_source_output_video2(source, nullptr);
+	device.ReleaseAccess();
+
+	obs_source_output_video(source, nullptr);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1173,9 +1211,25 @@ static void *CreateDShowInput(obs_data_t *settings, obs_source_t *source)
 	return dshow;
 }
 
-static void DestroyDShowInput(void *data)
+static DWORD CALLBACK DShowDeleteThread(LPVOID data)
 {
 	delete reinterpret_cast<DShowInput *>(data);
+	return 0;
+}
+
+static void DestroyDShowInput(void *data)
+{
+	DShowInput * object = reinterpret_cast<DShowInput *>(data);
+	HANDLE shutdown_started = object->shutdown_started;
+
+	WinHandle delete_thread = CreateThread(nullptr, 0, DShowDeleteThread, data, 0, nullptr);
+	if (delete_thread) {
+		WaitForSingleObject(shutdown_started, INFINITE);
+		WaitForSingleObject(delete_thread, DShowDeviceShutdowTimeout);
+	} else {
+		DShowDeleteThread(data);
+	}
+	CloseHandle(shutdown_started);
 }
 
 static void UpdateDShowInput(void *data, obs_data_t *settings)
@@ -1871,7 +1925,14 @@ static obs_properties_t *GetDShowProperties(void *obj)
 
 	obs_property_set_modified_callback(p, DeviceSelectionChanged);
 
-	Device::EnumVideoDevices(data->devices);
+	obs_data_t *settings = obs_source_get_settings(input->source);
+	string video_device_id = obs_data_get_string(settings, VIDEO_DEVICE_ID);
+	string audio_device_id = obs_data_get_string(settings, AUDIO_DEVICE_ID);
+	bool placeholder_video_device = video_device_id.compare("does_not_exist") == 0;
+	bool placeholder_audio_device = audio_device_id.compare("does_not_exist") == 0;
+	obs_data_release(settings);
+
+	Device::EnumVideoDevices(data->devices, !placeholder_video_device);
 	for (const VideoDevice &device : data->devices)
 		AddDevice(p, device);
 
@@ -1950,7 +2011,7 @@ static obs_properties_t *GetDShowProperties(void *obj)
 	/* ------------------------------------- */
 	/* audio settings */
 
-	Device::EnumAudioDevices(data->audioDevices);
+	Device::EnumAudioDevices(data->audioDevices, !placeholder_audio_device);
 
 	p = obs_properties_add_list(ppts, AUDIO_OUTPUT_MODE, TEXT_AUDIO_MODE,
 				    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);

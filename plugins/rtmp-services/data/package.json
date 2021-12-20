@@ -1,10 +1,10 @@
 {
-	"url": "https://obsproject.com/obs2_update/rtmp-services",
-	"version": 176,
+	"url": "https://slobs-cdn.streamlabs.com/rtmp-services",
+	"version": 153,
 	"files": [
 		{
 			"name": "services.json",
-			"version": 176
+			"version": 153
 		}
 	]
 }

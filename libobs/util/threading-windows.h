@@ -24,6 +24,11 @@
 #error Processor not supported
 #endif
 
+static inline long os_atomic_add_long(volatile long *ptr, long val)
+{
+	return _InterlockedExchangeAdd(ptr, val);
+}
+
 static inline long os_atomic_inc_long(volatile long *val)
 {
 	return _InterlockedIncrement(val);

@@ -15,6 +15,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 #include "ffmpeg-mux/ffmpeg-mux.h"
+#include "obs-internal.h"
 #include "obs-ffmpeg-mux.h"
 
 #ifdef _WIN32
@@ -560,6 +561,12 @@ static void ffmpeg_mux_data(void *data, struct encoder_packet *packet)
 	write_packet(stream, packet);
 }
 
+static bool ffmpeg_mux_is_ready_to_update(void *data)
+{
+	struct ffmpeg_muxer *stream = data;
+	return !(capturing(stream) || active(stream) || stopping(stream));
+}
+
 static obs_properties_t *ffmpeg_mux_properties(void *unused)
 {
 	UNUSED_PARAMETER(unused);
@@ -589,6 +596,7 @@ struct obs_output_info ffmpeg_muxer = {
 	.encoded_packet = ffmpeg_mux_data,
 	.get_total_bytes = ffmpeg_mux_total_bytes,
 	.get_properties = ffmpeg_mux_properties,
+	.is_ready_to_update = ffmpeg_mux_is_ready_to_update,
 };
 
 static int connect_time(struct ffmpeg_muxer *stream)
@@ -620,6 +628,7 @@ struct obs_output_info ffmpeg_mpegts_muxer = {
 	.get_total_bytes = ffmpeg_mux_total_bytes,
 	.get_properties = ffmpeg_mux_properties,
 	.get_connect_time_ms = ffmpeg_mpegts_mux_connect_time,
+	.is_ready_to_update = ffmpeg_mux_is_ready_to_update,
 };
 
 /* ------------------------------------------------------------------------ */
@@ -813,37 +822,57 @@ static void insert_packet(struct darray *array, struct encoder_packet *packet,
 
 static void *replay_buffer_mux_thread(void *data)
 {
+	bool hasFailed = false;
 	struct ffmpeg_muxer *stream = data;
+	int ret = 0;
+
+	do_output_signal(stream->output, "writing");
 	bool error = false;
 
 	start_pipe(stream, stream->path.array);
 
 	if (!stream->pipe) {
 		warn("Failed to create process pipe");
+		do_output_signal(stream->output, "writing_error");
+		hasFailed = true;
 		error = true;
 		goto error;
 	}
 
 	if (!send_headers(stream)) {
 		warn("Could not write headers for file '%s'",
-		     stream->path.array);
+				stream->path.array);
+		do_output_signal(stream->output, "writing_error");
+		hasFailed = true;
 		error = true;
 		goto error;
 	}
 
 	for (size_t i = 0; i < stream->mux_packets.num; i++) {
 		struct encoder_packet *pkt = &stream->mux_packets.array[i];
-		write_packet(stream, pkt);
+
+		if (!hasFailed) {
+			hasFailed = !write_packet(stream, pkt);
+		}
+
 		obs_encoder_packet_release(pkt);
 	}
 
-	info("Wrote replay buffer to '%s'", stream->path.array);
-
+	if (!hasFailed) {
+		info("Wrote replay buffer to '%s'", stream->path.array);
+	}
+	
 error:
-	os_process_pipe_destroy(stream->pipe);
+	ret = os_process_pipe_destroy(stream->pipe);
 	stream->pipe = NULL;
 	da_free(stream->mux_packets);
 	os_atomic_set_bool(&stream->muxing, false);
+	if (ret < 0) {
+		signal_failure(stream);
+	}
+	else if (!hasFailed) {
+		do_output_signal(stream->output, "wrote");
+	}
 
 	if (!error) {
 		calldata_t cd = {0};
@@ -911,13 +940,6 @@ static void replay_buffer_save(struct ffmpeg_muxer *stream)
 	if (dstr_end(&stream->path) != '/')
 		dstr_cat_ch(&stream->path, '/');
 	dstr_cat(&stream->path, filename);
-
-	char *slash = strrchr(stream->path.array, '/');
-	if (slash) {
-		*slash = 0;
-		os_mkdirs(stream->path.array);
-		*slash = '/';
-	}
 
 	bfree(filename);
 	obs_data_release(settings);
@@ -1012,4 +1034,5 @@ struct obs_output_info replay_buffer = {
 	.encoded_packet = replay_buffer_data,
 	.get_total_bytes = ffmpeg_mux_total_bytes,
 	.get_defaults = replay_buffer_defaults,
+	.is_ready_to_update = ffmpeg_mux_is_ready_to_update,
 };

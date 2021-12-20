@@ -353,6 +353,9 @@ bundle_dylibs() {
     fi
 
     step "Copy QtNetwork for plugin support"
+    if [ -d "./OBS.app/Contents/Frameworks/QtNetwork.framework" ]; then
+      /bin/rm -rf ./OBS.app/Contents/Frameworks/QtNetwork.framework
+    fi
     /bin/cp -R /tmp/obsdeps/lib/QtNetwork.framework ./OBS.app/Contents/Frameworks
     /bin/chmod -R +w ./OBS.app/Contents/Frameworks/QtNetwork.framework
     /bin/rm -r ./OBS.app/Contents/Frameworks/QtNetwork.framework/Headers

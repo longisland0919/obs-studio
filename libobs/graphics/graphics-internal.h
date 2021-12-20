@@ -334,6 +334,8 @@ struct gs_exports {
 		uint32_t n_planes, const int *fds, const uint32_t *strides,
 		const uint32_t *offsets, const uint64_t *modifiers);
 #endif
+	/* SLOBS custom functions */
+	void (*device_rebuild)(gs_device_t *device);
 };
 
 struct blend_state {

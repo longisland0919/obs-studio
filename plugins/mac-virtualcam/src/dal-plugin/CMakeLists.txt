@@ -28,24 +28,24 @@ include_directories(${AVFOUNDATION}
 set(mac-dal-plugin_HEADERS
 	Defines.h
 	Logging.h
-	OBSDALPlugInInterface.h
-    OBSDALObjectStore.h
-	OBSDALPlugIn.h
-	OBSDALDevice.h
-    OBSDALStream.h
+	LONGDALPlugInInterface.h
+    LONGDALObjectStore.h
+	LONGDALPlugIn.h
+	LONGDALDevice.h
+    LONGDALStream.h
 	CMSampleBufferUtils.h
-	OBSDALMachClient.h
+	LONGDALMachClient.h
 	../common/MachProtocol.h)
 
 set(mac-dal-plugin_SOURCES
-	OBSDALPlugInMain.mm
-	OBSDALPlugInInterface.mm
-	OBSDALObjectStore.mm
-	OBSDALPlugIn.mm
-	OBSDALDevice.mm
-    OBSDALStream.mm
+	LONGDALPlugInMain.mm
+	LONGDALPlugInInterface.mm
+	LONGDALObjectStore.mm
+	LONGDALPlugIn.mm
+	LONGDALDevice.mm
+    LONGDALStream.mm
 	CMSampleBufferUtils.mm
-	OBSDALMachClient.mm)
+	LONGDALMachClient.mm)
 
 add_library(mac-dal-plugin MODULE
 	${mac-dal-plugin_SOURCES}
@@ -54,7 +54,7 @@ add_library(mac-dal-plugin MODULE
 set_target_properties(mac-dal-plugin PROPERTIES
 	FOLDER "plugins"
 	BUNDLE TRUE
-	OUTPUT_NAME "obs-mac-virtualcam"
+	OUTPUT_NAME "vizard-mac-virtualcam"
 	COMPILE_FLAGS "-std=gnu++14 -stdlib=libc++ -fobjc-arc -fobjc-weak")
 
 if (XCODE)
@@ -75,8 +75,8 @@ target_link_libraries(mac-dal-plugin
 
 add_custom_command(TARGET mac-dal-plugin
 	POST_BUILD
-	COMMAND rm -rf ${TARGET_DIR}/obs-mac-virtualcam.plugin || true
-	COMMAND ${CMAKE_COMMAND} -E copy_directory ${TARGET_DIR}/obs-mac-virtualcam.bundle ${TARGET_DIR}/obs-mac-virtualcam.plugin
+	COMMAND rm -rf ${TARGET_DIR}/vizard-mac-virtualcam.plugin || true
+	COMMAND ${CMAKE_COMMAND} -E copy_directory ${TARGET_DIR}/vizard-mac-virtualcam.bundle ${TARGET_DIR}/vizard-mac-virtualcam.plugin
 	COMMENT "Rename bundle to plugin"
 )
 
@@ -86,24 +86,24 @@ add_custom_command(TARGET mac-dal-plugin
 # Instead, just copy in one that was already generated from Xcode.
 add_custom_command(TARGET mac-dal-plugin
 	POST_BUILD
-	COMMAND cp ${PROJECT_SOURCE_DIR}/Info.plist ${TARGET_DIR}/obs-mac-virtualcam.plugin/Contents/Info.plist
-    COMMAND mkdir ${TARGET_DIR}/obs-mac-virtualcam.plugin/Contents/Resources
-    COMMAND cp ${PROJECT_SOURCE_DIR}/placeholder.png ${TARGET_DIR}/obs-mac-virtualcam.plugin/Contents/Resources/placeholder.png
-	COMMAND /usr/bin/plutil -insert CFBundleVersion -string "${OBS_VERSION}" ${TARGET_DIR}/obs-mac-virtualcam.plugin/Contents/Info.plist
-	COMMAND /usr/bin/plutil -insert CFBundleShortVersionString -string "${OBS_VERSION}" ${TARGET_DIR}/obs-mac-virtualcam.plugin/Contents/Info.plist
+	COMMAND cp ${PROJECT_SOURCE_DIR}/Info.plist ${TARGET_DIR}/vizard-mac-virtualcam.plugin/Contents/Info.plist
+    COMMAND mkdir ${TARGET_DIR}/vizard-mac-virtualcam.plugin/Contents/Resources
+    COMMAND cp ${PROJECT_SOURCE_DIR}/placeholder.png ${TARGET_DIR}/vizard-mac-virtualcam.plugin/Contents/Resources/placeholder.png
+	COMMAND /usr/bin/plutil -insert CFBundleVersion -string "2" ${TARGET_DIR}/vizard-mac-virtualcam.plugin/Contents/Info.plist
+	COMMAND /usr/bin/plutil -insert CFBundleShortVersionString -string "${OBS_VERSION}" ${TARGET_DIR}/vizard-mac-virtualcam.plugin/Contents/Info.plist
 	DEPENDS {PROJECT_SOURCE_DIR}/Info.plist
 	COMMENT "Copy in Info.plist"
 )
 
 add_custom_command(TARGET mac-dal-plugin
 	POST_BUILD
-	COMMAND /usr/bin/codesign --force --deep --sign - --timestamp=none ${TARGET_DIR}/obs-mac-virtualcam.plugin
+	COMMAND /usr/bin/codesign --force --deep --sign - --timestamp=none ${TARGET_DIR}/vizard-mac-virtualcam.plugin
 	COMMENT "Codesign plugin"
 )
 
 add_custom_command(TARGET mac-dal-plugin
 	POST_BUILD
-	COMMAND rm -rf "${OBS_OUTPUT_DIR}/$<CONFIGURATION>/data/obs-mac-virtualcam.plugin" || true
-	COMMAND ${CMAKE_COMMAND} -E copy_directory ${TARGET_DIR}/obs-mac-virtualcam.plugin "${OBS_OUTPUT_DIR}/$<CONFIGURATION>/data/obs-mac-virtualcam.plugin"
+	COMMAND rm -rf "${OBS_OUTPUT_DIR}/$<CONFIGURATION>/data/vizard-mac-virtualcam.plugin" || true
+	COMMAND ${CMAKE_COMMAND} -E copy_directory ${TARGET_DIR}/vizard-mac-virtualcam.plugin "${OBS_OUTPUT_DIR}/$<CONFIGURATION>/data/vizard-mac-virtualcam.plugin"
 	COMMENT "Copy plugin to destination"
 )

@@ -227,5 +227,8 @@ bool load_graphics_imports(struct gs_exports *exports, void *module,
 	GRAPHICS_IMPORT(device_texture_create_from_dmabuf);
 #endif
 
+	/* SLOBS custom functions */
+	GRAPHICS_IMPORT_OPTIONAL(device_rebuild);
+
 	return success;
 }

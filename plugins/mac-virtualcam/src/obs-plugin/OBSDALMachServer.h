@@ -7,9 +7,18 @@
 
 #import <Foundation/Foundation.h>
 
+typedef enum {
+	MachClientConnectStateConnect = 1,
+	MachClientConnectStateDisconnect = 2,
+} MachClientConnectState;
+
 NS_ASSUME_NONNULL_BEGIN
 
 @interface OBSDALMachServer : NSObject
+
+@property BOOL mirror;
+
+@property (nonatomic, copy) void (^machClientConnectStateChanged)(MachClientConnectState state);
 
 - (void)run;
 

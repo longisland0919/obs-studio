@@ -8,46 +8,10 @@
 
 #include "window-utils.h"
 
-enum crop_mode {
-	CROP_NONE,
-	CROP_MANUAL,
-	CROP_TO_WINDOW,
-	CROP_TO_WINDOW_AND_MANUAL,
-	CROP_INVALID
-};
-
 static inline bool requires_window(enum crop_mode mode)
 {
 	return mode == CROP_TO_WINDOW || mode == CROP_TO_WINDOW_AND_MANUAL;
 }
-
-struct display_capture {
-	obs_source_t *source;
-
-	gs_samplerstate_t *sampler;
-	gs_effect_t *effect;
-	gs_texture_t *tex;
-	gs_vertbuffer_t *vertbuf;
-
-	NSScreen *screen;
-	unsigned display;
-	NSRect frame;
-	bool hide_cursor;
-
-	enum crop_mode crop;
-	CGRect crop_rect;
-
-	struct cocoa_window window;
-	CGRect window_rect;
-	bool on_screen;
-	bool hide_when_minimized;
-
-	os_event_t *disp_finished;
-	CGDisplayStreamRef disp;
-	IOSurfaceRef current, prev;
-
-	pthread_mutex_t mutex;
-};
 
 static inline bool crop_mode_valid(enum crop_mode mode)
 {
@@ -99,18 +63,13 @@ static void display_capture_destroy(void *data)
 		return;
 
 	obs_enter_graphics();
-
 	destroy_display_stream(dc);
-
 	if (dc->sampler)
 		gs_samplerstate_destroy(dc->sampler);
 	if (dc->vertbuf)
 		gs_vertexbuffer_destroy(dc->vertbuf);
-
 	obs_leave_graphics();
-
 	destroy_window(&dc->window);
-
 	pthread_mutex_destroy(&dc->mutex);
 	bfree(dc);
 }
@@ -122,7 +81,6 @@ static inline void update_window_params(struct display_capture *dc)
 
 	NSArray *arr = (NSArray *)CGWindowListCopyWindowInfo(
 		kCGWindowListOptionIncludingWindow, dc->window.window_id);
-
 	if (arr.count) {
 		NSDictionary *dict = arr[0];
 		NSDictionary *ref = dict[(NSString *)kCGWindowBounds];
@@ -131,7 +89,6 @@ static inline void update_window_params(struct display_capture *dc)
 		dc->on_screen = dict[(NSString *)kCGWindowIsOnscreen] != nil;
 		dc->window_rect =
 			[dc->screen convertRectToBacking:dc->window_rect];
-
 	} else {
 		if (find_window(&dc->window, NULL, false))
 			update_window_params(dc);
@@ -186,12 +143,9 @@ static bool init_display_stream(struct display_capture *dc)
 		return false;
 
 	dc->screen = [[NSScreen screens][dc->display] retain];
-
 	dc->frame = [dc->screen convertRectToBacking:dc->screen.frame];
-
 	NSNumber *screen_num = dc->screen.deviceDescription[@"NSScreenNumber"];
 	CGDirectDisplayID disp_id = (CGDirectDisplayID)screen_num.pointerValue;
-
 	NSDictionary *rect_dict =
 		CFBridgingRelease(CGRectCreateDictionaryRepresentation(
 			CGRectMake(0, 0, dc->screen.frame.size.width,
@@ -208,7 +162,6 @@ static bool init_display_stream(struct display_capture *dc)
 	};
 
 	os_event_init(&dc->disp_finished, OS_EVENT_TYPE_MANUAL);
-
 	const CGSize *size = &dc->frame.size;
 	dc->disp = CGDisplayStreamCreateWithDispatchQueue(
 		disp_id, size->width, size->height, 'BGRA',

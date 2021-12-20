@@ -7,6 +7,7 @@ project(win-dshow)
 
 find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil)
 include_directories(${FFMPEG_INCLUDE_DIRS})
+include_directories(${OBS_JANSSON_INCLUDE_DIRS})
 
 set(win-dshow_HEADERS
 	encode-dstr.hpp
@@ -104,6 +105,7 @@ set(libdshowcapture_SOURCES
 	libdshowcapture/source/dshow-formats.cpp
 	libdshowcapture/source/dshow-media-type.cpp
 	libdshowcapture/source/dshow-encoded-device.cpp
+	libdshowcapture/source/dshow-dialogbox.cpp
 	libdshowcapture/source/log.cpp)
 
 set(libdshowcapture_HEADERS
@@ -119,6 +121,7 @@ set(libdshowcapture_HEADERS
 	libdshowcapture/source/dshow-enum.hpp
 	libdshowcapture/source/dshow-formats.hpp
 	libdshowcapture/source/dshow-media-type.hpp
+	libdshowcapture/source/dshow-dialogbox.hpp
 	libdshowcapture/source/log.hpp)
 
 add_library(win-dshow MODULE

@@ -42,6 +42,7 @@ typedef void (*PFN_winrt_capture_render)(struct winrt_capture *capture,
 typedef uint32_t (*PFN_winrt_capture_width)(const struct winrt_capture *capture);
 typedef uint32_t (*PFN_winrt_capture_height)(
 	const struct winrt_capture *capture);
+typedef bool (*PFN_winrt_capture_is_closed)(const struct winrt_capture *capture);
 
 struct winrt_exports {
 	PFN_winrt_capture_supported winrt_capture_supported;
@@ -54,6 +55,7 @@ struct winrt_exports {
 	PFN_winrt_capture_render winrt_capture_render;
 	PFN_winrt_capture_width winrt_capture_width;
 	PFN_winrt_capture_height winrt_capture_height;
+	PFN_winrt_capture_is_closed winrt_capture_is_closed;
 };
 
 enum window_capture_method {
@@ -382,6 +384,14 @@ static bool wc_window_changed(obs_properties_t *props, obs_property_t *p,
 			      obs_data_t *settings)
 {
 	struct window_capture *wc = obs_properties_get_param(props);
+
+	const char *window = obs_data_get_string(settings, "window");
+	if (window == NULL || strlen(window) == 0) {
+		const char *first_window = obs_property_list_item_string(p, 0);
+		if (first_window)
+			obs_data_set_default_string(settings, "window", first_window);
+	}
+
 	update_settings(wc, settings);
 
 	update_settings_visibility(props, wc);
@@ -594,7 +604,8 @@ static void wc_render(void *data, gs_effect_t *effect)
 struct obs_source_info window_capture_info = {
 	.id = "window_capture",
 	.type = OBS_SOURCE_TYPE_INPUT,
-	.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW |
+	.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW | 
+			OBS_SOURCE_DO_NOT_DUPLICATE |
 			OBS_SOURCE_SRGB,
 	.get_name = wc_getname,
 	.create = wc_create,

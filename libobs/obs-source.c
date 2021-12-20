@@ -96,6 +96,7 @@ static const char *source_signals[] = {
 	"void transition_start(ptr source)",
 	"void transition_video_stop(ptr source)",
 	"void transition_stop(ptr source)",
+	"void game_capture_changed(ptr source)",
 	"void media_play(ptr source)",
 	"void media_pause(ptr source)",
 	"void media_restart(ptr source)",
@@ -2705,7 +2706,9 @@ static inline void copy_frame_data_line(struct obs_source_frame *dst,
 				 ? dst->linesize[plane]
 				 : src->linesize[plane];
 
-	memcpy(dst->data[plane] + pos_dst, src->data[plane] + pos_src, bytes);
+	if (dst->data[plane] + pos_dst != NULL &&
+	    src->data[plane] + pos_src != NULL)
+		memcpy(dst->data[plane] + pos_dst, src->data[plane] + pos_src, bytes);
 }
 
 static inline void copy_frame_data_plane(struct obs_source_frame *dst,
@@ -2716,8 +2719,9 @@ static inline void copy_frame_data_plane(struct obs_source_frame *dst,
 		for (uint32_t y = 0; y < lines; y++)
 			copy_frame_data_line(dst, src, plane, y);
 	} else {
-		memcpy(dst->data[plane], src->data[plane],
-		       (size_t)dst->linesize[plane] * (size_t)lines);
+		if (dst->data[plane] != NULL && src->data[plane] != NULL)
+			memcpy(dst->data[plane], src->data[plane],
+			       (size_t)dst->linesize[plane] * (size_t)lines);
 	}
 }
 
@@ -2728,6 +2732,10 @@ static void copy_frame_data(struct obs_source_frame *dst,
 	dst->flags = src->flags;
 	dst->full_range = src->full_range;
 	dst->timestamp = src->timestamp;
+
+	if (!dst->color_matrix || !src->color_matrix)
+		return;
+
 	memcpy(dst->color_matrix, src->color_matrix, sizeof(float) * 16);
 	if (!dst->full_range) {
 		size_t const size = sizeof(float) * 3;
@@ -2967,6 +2975,16 @@ void obs_source_output_video2(obs_source_t *source,
 	       sizeof(frame->color_range_max));
 
 	obs_source_output_video_internal(source, &new_frame);
+}
+
+void obs_source_reset_video(obs_source_t *source)
+{
+	obs_source_output_video(source, NULL);
+	pthread_mutex_lock(&source->async_mutex);
+	free_async_cache(source);
+	clean_cache(source);
+	source->last_frame_ts = 0;
+	pthread_mutex_unlock(&source->async_mutex);
 }
 
 void obs_source_set_async_rotation(obs_source_t *source, long rotation)
@@ -3280,7 +3298,8 @@ static void copy_audio_data(obs_source_t *source, const uint8_t *const data[],
 			source->audio_data.data[i] = bmalloc(size);
 		}
 
-		memcpy(source->audio_data.data[i], data[i], size);
+		if (data[i] != NULL)
+			memcpy(source->audio_data.data[i], data[i], size);
 	}
 
 	if (resize)

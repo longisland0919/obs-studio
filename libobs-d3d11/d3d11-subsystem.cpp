@@ -26,6 +26,8 @@
 #include "d3d11-subsystem.hpp"
 #include "d3d11-config.h"
 #include "intel-nv12-support.hpp"
+#include <KnownFolders.h>
+#include <ShlObj_core.h>
 
 struct UnsupportedHWError : HRError {
 	inline UnsupportedHWError(const char *str, HRESULT hr)
@@ -205,6 +207,13 @@ void gs_device::InitCompiler()
 	char d3dcompiler[40] = {};
 	int ver = 49;
 
+	wchar_t *path;
+	if (SHGetKnownFolderPath(FOLDERID_SystemX86, 0, NULL, &path) != S_OK) {
+		throw "Could not retrieve system path";
+	}
+
+	SetDllDirectory(path);
+
 	while (ver > 30) {
 		sprintf(d3dcompiler, "D3DCompiler_%02d.dll", ver);
 
@@ -218,6 +227,8 @@ void gs_device::InitCompiler()
 				module, "D3DDisassemble");
 #endif
 			if (d3dCompile) {
+				CoTaskMemFree(path);
+				SetDllDirectory(nullptr);
 				return;
 			}
 
@@ -227,6 +238,8 @@ void gs_device::InitCompiler()
 		ver--;
 	}
 
+	CoTaskMemFree(path);
+	SetDllDirectory(nullptr);
 	throw "Could not find any D3DCompiler libraries. Make sure you've "
 	      "installed the <a href=\"https://obsproject.com/go/dxwebsetup\">"
 	      "DirectX components</a> that OBS Studio requires.";
@@ -542,7 +555,10 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 
 	/* WARP NV12 support is suspected to be buggy on older Windows */
 	if (desc.VendorId == 0x1414 && desc.DeviceId == 0x8c) {
-		return;
+		/*But disabling it causes a slow down of recording finishing when selective 
+		recording enabled.  
+		Keep it commented till new circumstances comes up */
+		//return;
 	}
 
 	/* Intel CopyResource is very slow with NV12 */
@@ -2462,6 +2478,10 @@ void gs_vertexbuffer_destroy(gs_vertbuffer_t *vertbuffer)
 {
 	if (vertbuffer && vertbuffer->device->lastVertexBuffer == vertbuffer)
 		vertbuffer->device->lastVertexBuffer = nullptr;
+
+	if (vertbuffer && vertbuffer->device->curVertexBuffer == vertbuffer)
+		vertbuffer->device->curVertexBuffer = nullptr;
+
 	delete vertbuffer;
 }
 
@@ -2899,8 +2919,9 @@ device_register_loss_callbacks(gs_device_t *device,
 	device->loss_callbacks.emplace_back(*callbacks);
 }
 
-extern "C" EXPORT void device_unregister_loss_callbacks(gs_device_t *device,
-							void *data)
+extern "C" EXPORT void
+device_unregister_loss_callbacks(gs_device_t *device,
+					void *data)
 {
 	for (auto iter = device->loss_callbacks.begin();
 	     iter != device->loss_callbacks.end(); ++iter) {
@@ -2909,6 +2930,11 @@ extern "C" EXPORT void device_unregister_loss_callbacks(gs_device_t *device,
 			break;
 		}
 	}
+}
+
+extern "C" EXPORT void device_rebuild(gs_device_t *device)
+{
+	device->RebuildDevice();
 }
 
 uint32_t gs_get_adapter_count(void)

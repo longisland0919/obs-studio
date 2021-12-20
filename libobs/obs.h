@@ -624,6 +624,10 @@ EXPORT void obs_enum_encoders(bool (*enum_proc)(void *, obs_encoder_t *),
 EXPORT void obs_enum_services(bool (*enum_proc)(void *, obs_service_t *),
 			      void *param);
 
+/** Check if global obs object know that reference */
+EXPORT bool obs_scene_is_present(obs_scene_t * checking_scene);
+EXPORT bool obs_source_is_present(obs_source_t * checking_source);
+
 /**
  * Gets a source by its name.
  *
@@ -951,6 +955,9 @@ EXPORT void obs_source_reset_settings(obs_source_t *source,
 
 /** Renders a video source. */
 EXPORT void obs_source_video_render(obs_source_t *source);
+
+/** Updates a source. */
+EXPORT void obs_source_video_tick(obs_source_t *source, float seconds);
 
 /** Gets the width of a source (if it has video) */
 EXPORT uint32_t obs_source_get_width(obs_source_t *source);
@@ -1307,6 +1314,9 @@ EXPORT struct obs_source_frame *obs_source_get_frame(obs_source_t *source);
 /** Releases the current async video frame */
 EXPORT void obs_source_release_frame(obs_source_t *source,
 				     struct obs_source_frame *frame);
+
+/** Reset varables for video played before */
+EXPORT void obs_source_reset_video(obs_source_t *source);
 
 /**
  * Default RGB filter handler for generic effect filters.  Processes the
@@ -1669,6 +1679,9 @@ EXPORT void obs_sceneitem_set_order(obs_sceneitem_t *item,
 				    enum obs_order_movement movement);
 EXPORT void obs_sceneitem_set_order_position(obs_sceneitem_t *item,
 					     int position);
+EXPORT void obs_scene_set_items_order(obs_scene_t *scene, 
+						 int64_t* new_items_order, 
+						 int items_count);
 EXPORT void obs_sceneitem_set_bounds_type(obs_sceneitem_t *item,
 					  enum obs_bounds_type type);
 EXPORT void obs_sceneitem_set_bounds_alignment(obs_sceneitem_t *item,
@@ -1839,6 +1852,9 @@ EXPORT bool obs_weak_output_references_output(obs_weak_output_t *weak,
 					      obs_output_t *output);
 
 EXPORT const char *obs_output_get_name(const obs_output_t *output);
+
+/** Starts the output. */
+EXPORT bool obs_output_is_ready_to_update(obs_output_t *output);
 
 /** Starts the output. */
 EXPORT bool obs_output_start(obs_output_t *output);
@@ -2304,6 +2320,7 @@ EXPORT const char *obs_service_get_type(const obs_service_t *service);
 
 /** Updates the settings of the service context */
 EXPORT void obs_service_update(obs_service_t *service, obs_data_t *settings);
+EXPORT bool obs_service_is_ready_to_update(obs_service_t *service);
 
 /** Returns the current settings for this service */
 EXPORT obs_data_t *obs_service_get_settings(const obs_service_t *service);
