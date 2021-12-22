@@ -59,7 +59,7 @@ static bool check_dal_plugin()
 		if ([app bundleIdentifier] != nil) {
 			NSURL *bundleURL = [app bundleURL];
 			NSString *pluginPath =
-				@"Contents/Resources/data/vizard-mac-virtualcam.plugin";
+				@"Contents/Resources/data/obs-plugins/mac-virtualcam/vizard-mac-virtualcam.plugin";
 
 			NSURL *pluginUrl = [bundleURL
 				URLByAppendingPathComponent:pluginPath];
@@ -67,7 +67,7 @@ static bool check_dal_plugin()
 		} else {
 			dalPluginSourcePath = [[[[app executableURL]
 				URLByAppendingPathComponent:
-					@"../data/vizard-mac-virtualcam.plugin"]
+					@"../data/obs-plugins/mac-virtualcam/vizard-mac-virtualcam.plugin"]
 				path]
 				stringByReplacingOccurrencesOfString:@"obs/"
 							  withString:@""];
@@ -146,7 +146,7 @@ static void *virtualcam_output_create(obs_data_t *settings,
 	sMachServer = [[OBSDALMachServer alloc] init];
 	sMachServer.mirror = mirror;
 	sMachServer.machClientConnectStateChanged = ^(MachClientConnectState state) {
-		// blog(LOG_DEBUG, "virtualcam_receive_dal_message: %d", state); 
+		// blog(LOG_DEBUG, "virtualcam_receive_dal_message: %d", state);
 		signal_handler_t *handler = obs_output_get_signal_handler(outputRef);
 		if (state == MachClientConnectStateConnect) {
 			signal_handler_signal(handler, "connect", nullptr);

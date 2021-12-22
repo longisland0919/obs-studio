@@ -8,14 +8,14 @@ endif()
 project(obs-studio)
 
 option(DEBUG_FFMPEG_MUX "Debug FFmpeg muxer subprocess" FALSE)
-
+set (CMAKE_PREFIX_PATH "/usr/local/Cellar/qt@5/5.15.2/")
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 if(WIN32)
 	cmake_minimum_required(VERSION 3.16)
 
-	# Check for Win SDK version 10.0.19041 or above
-	if(MSVC AND MSVC_VERSION LESS 1920)
+	# Check for Win SDK version 10.0.20348 or above
+	if(MSVC)
 		message(STATUS "Windows API version is ${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
 		string(REPLACE "." ";" WINAPI_VER "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
 
@@ -26,7 +26,7 @@ if(WIN32)
 		set(WINAPI_COMPATIBLE FALSE)
 		if(WINAPI_VER_MAJOR EQUAL 10)
 			if (WINAPI_VER_MINOR EQUAL 0)
-				if (WINAPI_VER_BUILD GREATER_EQUAL 19041)
+				if (WINAPI_VER_BUILD GREATER_EQUAL 20348)
 					set(WINAPI_COMPATIBLE TRUE)
 				endif()
 			else()
@@ -37,7 +37,7 @@ if(WIN32)
 		endif()
 
 		if(NOT WINAPI_COMPATIBLE)
-			message(FATAL_ERROR "OBS requires Windows 10 SDK version 10.0.19041.0 and above to compile.\nPlease download the most recent Windows 10 SDK in order to compile (or update to Visual Studio 2019).")
+			message(FATAL_ERROR "OBS requires Windows 10 SDK version 10.0.20348.0 and above to compile.\nPlease download the most recent Windows 10 SDK in order to compile.")
 		endif()
 	endif()
 
@@ -175,6 +175,10 @@ if(MSVC)
 	set(CMAKE_C_FLAGS_DEBUG "/DDEBUG=1 /D_DEBUG=1 ${CMAKE_C_FLAGS_DEBUG}")
 	set(CMAKE_CXX_FLAGS_DEBUG "/DDEBUG=1 /D_DEBUG=1 ${CMAKE_C_FLAGS_DEBUG}")
 
+	# https://gitlab.kitware.com/cmake/cmake/-/issues/20812
+	set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} /Ob2")
+	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} /Ob2")
+
 	if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SAFESEH:NO")
 		set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /SAFESEH:NO")
@@ -184,7 +188,7 @@ if(MSVC)
 	foreach(t EXE SHARED MODULE)
 		set(CMAKE_${t}_LINKER_FLAGS "${CMAKE_${t}_LINKER_FLAGS} /OPT:REF")
 		set(CMAKE_${t}_LINKER_FLAGS_DEBUG "${CMAKE_${t}_LINKER_FLAGS_DEBUG} /INCREMENTAL:NO")
-		set(CMAKE_${t}_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_${t}_LINKER_FLAGS_RELWITHDEBINFO} /INCREMENTAL:NO")
+		set(CMAKE_${t}_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_${t}_LINKER_FLAGS_RELWITHDEBINFO} /INCREMENTAL:NO /OPT:ICF")
 	endforeach()
 else()
 	if(MINGW)

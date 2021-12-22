@@ -173,13 +173,15 @@ struct game_capture {
 	int placeholder_text_height;
 	int placeholder_text_width;
 	gs_image_file2_t placeholder_image;
-	gs_texture_t *placeholder_text_texture; 
+	gs_texture_t *placeholder_text_texture;
 	struct dstr placeholder_image_path;
 	struct dstr placeholder_text;
 
 	ipc_pipe_server_t pipe;
 	gs_texture_t *texture;
-	bool supports_srgb;
+	gs_texture_t *extra_texture;
+	gs_texrender_t *extra_texrender;
+	bool linear_sample;
 	struct hook_info *global_hook_info;
 	HANDLE keepalive_mutex;
 	HANDLE hook_init;
@@ -334,7 +336,7 @@ static inline float hook_rate_to_float(enum hook_rate rate)
 
 static void load_whitelist(struct auto_game_capture * ac, const char * whitelist_path)
 {
-	if (ac->matching_rules.num != 0) 
+	if (ac->matching_rules.num != 0)
 		return;
 
 	char *file_data = os_quick_read_utf8_file(whitelist_path);
@@ -346,7 +348,7 @@ static void load_whitelist(struct auto_game_capture * ac, const char * whitelist
 	bfree(file_data);
 	if (root) {
 		WaitForSingleObject(ac->mutex, INFINITE);
-	
+
 		da_free(ac->checked_windows);
 
 		size_t index;
@@ -367,7 +369,7 @@ static void free_whitelist(struct auto_game_capture * ac)
 	WaitForSingleObject(ac->mutex, INFINITE);
 	for (size_t i = 0; i < ac->matching_rules.num; i++) {
 		struct game_capture_matching_rule * rule = ac->matching_rules.array + i;
-		
+
 		dstr_free(&rule->title);
 		dstr_free(&rule->class);
 		dstr_free(&rule->executable);
@@ -412,12 +414,14 @@ static void stop_capture(struct game_capture *gc)
 	close_handle(&gc->texture_mutexes[0]);
 	close_handle(&gc->texture_mutexes[1]);
 
-	if (gc->texture) {
-		obs_enter_graphics();
-		gs_texture_destroy(gc->texture);
-		obs_leave_graphics();
-		gc->texture = NULL;
-	}
+	obs_enter_graphics();
+	gs_texrender_destroy(gc->extra_texrender);
+	gc->extra_texrender = NULL;
+	gs_texture_destroy(gc->extra_texture);
+	gc->extra_texture = NULL;
+	gs_texture_destroy(gc->texture);
+	gc->texture = NULL;
+	obs_leave_graphics();
 
 	if (gc->active)
 		info("capture stopped");
@@ -456,7 +460,7 @@ static void game_capture_destroy(void *data)
 	dstr_free(&gc->class);
 	dstr_free(&gc->executable);
 	free_config(&gc->config);
-	
+
 	free_whitelist(&gc->auto_capture);
 	close_handle(&gc->auto_capture.mutex);
 	dstr_free(&gc->placeholder_image_path);
@@ -493,7 +497,7 @@ static inline void get_config(struct game_capture_config *cfg,
 		cfg->mode = CAPTURE_MODE_HOTKEY;
 	else  if (mode_str && strcmp(mode_str, SETTING_MODE_ANY) == 0)
 		cfg->mode = CAPTURE_MODE_ANY;
-	else 
+	else
 		cfg->mode = CAPTURE_MODE_AUTO;
 
 	cfg->priority = (enum window_priority)obs_data_get_int(
@@ -592,7 +596,7 @@ static void load_placeholder_image(struct game_capture *gc)
 		gs_image_file2_init_texture(&gc->placeholder_image);
 		obs_leave_graphics();
 	}
-	
+
 	TCHAR* translated_string = NULL;
 	size_t len = os_utf8_to_wcs(gc->placeholder_text.array, 0, NULL, 0);
 	if (len) {
@@ -606,7 +610,7 @@ static void load_placeholder_image(struct game_capture *gc)
 	const int fraction_of_image_for_text = 8;
 	const int text_fitting_step = 5;
 	const int ALPHA_COMPONENT = 3;
-	struct obs_video_info ovi;	
+	struct obs_video_info ovi;
 	obs_get_video_info(&ovi);
 
 	gc->placeholder_text_height = ovi.base_height/fraction_of_image_for_text;
@@ -619,12 +623,12 @@ static void load_placeholder_image(struct game_capture *gc)
 	bmphdr.biPlanes = 1;
 	bmphdr.biBitCount = 32;
 	bmphdr.biSizeImage = gc->placeholder_text_height * gc->placeholder_text_width * bytes_per_pixel;
-	
+
 	HDC wdc = GetDC(NULL);
 	if (wdc) {
 		HDC memDC = CreateCompatibleDC ( wdc );
 
-		uint8_t * bitmap_buffer = bmalloc(bmphdr.biSizeImage);	
+		uint8_t * bitmap_buffer = bmalloc(bmphdr.biSizeImage);
 		HBITMAP text_bitmap = CreateDIBSection(NULL, (PBITMAPINFO)&bmphdr, DIB_RGB_COLORS, &bitmap_buffer, NULL, 0);
 		if (text_bitmap) {
 			SelectObject(memDC, text_bitmap);
@@ -645,41 +649,41 @@ static void load_placeholder_image(struct game_capture *gc)
 			while (true) {
 				font = CreateFontIndirect(&LogFont);
 				SelectObject(memDC, font);
-				
+
 				GetTextExtentPoint32(memDC, translated_string, len, &string_width);
-				if (string_width.cx < gc->placeholder_text_width) 
+				if (string_width.cx < gc->placeholder_text_width)
 					break;
-				
+
 				DeleteObject(font);
 				LogFont.lfHeight = LogFont.lfHeight - text_fitting_step;
 			}
 
-			TextOut(memDC, 
-				(gc->placeholder_text_width-string_width.cx)/2, 
-				(gc->placeholder_text_height-LogFont.lfHeight)/2, 
-				translated_string, len); 
+			TextOut(memDC,
+				(gc->placeholder_text_width-string_width.cx)/2,
+				(gc->placeholder_text_height-LogFont.lfHeight)/2,
+				translated_string, len);
 
 			for (int i = 0; i <gc->placeholder_text_height*gc->placeholder_text_width; i++)	{
 				int pixel_offset = i*bytes_per_pixel;
-				int color_components_average = (bitmap_buffer[pixel_offset+0] + 
-								bitmap_buffer[pixel_offset+1] + 
+				int color_components_average = (bitmap_buffer[pixel_offset+0] +
+								bitmap_buffer[pixel_offset+1] +
 								bitmap_buffer[pixel_offset+2])/3;
 
 				bitmap_buffer[pixel_offset+ALPHA_COMPONENT] = color_components_average;
 			}
 
 			obs_enter_graphics();
-			gc->placeholder_text_texture = gs_texture_create(gc->placeholder_text_width, 
-									gc->placeholder_text_height, 
-									GS_BGRA, 1, 
+			gc->placeholder_text_texture = gs_texture_create(gc->placeholder_text_width,
+									gc->placeholder_text_height,
+									GS_BGRA, 1,
 									&bitmap_buffer, GS_DYNAMIC);
 			obs_leave_graphics();
 
 			DeleteObject(font);
 			DeleteObject(text_bitmap);
 		}
-		DeleteDC(memDC);  
-		DeleteDC(wdc);  
+		DeleteDC(memDC);
+		DeleteDC(wdc);
 	}
 
 	free( translated_string );
@@ -717,7 +721,7 @@ static void game_capture_update(void *data, obs_data_t *settings)
 	} else {
 		free_whitelist(&gc->auto_capture);
 	}
-	
+
 	const char *img_path = NULL;
 	const char *placeholder_text = NULL;
 	bool use_custom_placeholder = obs_data_get_bool(settings, SETTING_PLACEHOLDER_USE);
@@ -1318,7 +1322,7 @@ static void save_selected_window(struct game_capture *gc, HWND window)
 	obs_data_set_string(settings, SETTING_CAPTURE_WINDOW, window_line.array);
 
 	obs_data_release(settings);
-}		
+}
 
 static void get_game_window(struct game_capture *gc)
 {
@@ -1845,49 +1849,110 @@ static inline bool is_16bit_format(uint32_t format)
 
 static inline bool init_shmem_capture(struct game_capture *gc)
 {
-	enum gs_color_format format;
-
-	gc->texture_buffers[0] =
-		(uint8_t *)gc->data + gc->shmem_data->tex1_offset;
-	gc->texture_buffers[1] =
-		(uint8_t *)gc->data + gc->shmem_data->tex2_offset;
-
-	gc->convert_16bit = is_16bit_format(gc->global_hook_info->format);
-	format = gc->convert_16bit
-			 ? GS_BGRA
-			 : convert_format(gc->global_hook_info->format);
+	const uint32_t dxgi_format = gc->global_hook_info->format;
+	const bool convert_16bit = is_16bit_format(dxgi_format);
+	const enum gs_color_format format =
+		convert_16bit ? GS_BGRA : convert_format(dxgi_format);
 
 	obs_enter_graphics();
+	gs_texrender_destroy(gc->extra_texrender);
+	gc->extra_texrender = NULL;
+	gs_texture_destroy(gc->extra_texture);
+	gc->extra_texture = NULL;
 	gs_texture_destroy(gc->texture);
-	gc->texture =
+	gc->texture = NULL;
+	gs_texture_t *const texture =
 		gs_texture_create(gc->cx, gc->cy, format, 1, NULL, GS_DYNAMIC);
 	obs_leave_graphics();
 
-	if (!gc->texture) {
+	bool success = texture != NULL;
+	if (success) {
+		const bool linear_sample = format != GS_R10G10B10A2;
+
+		gs_texrender_t *extra_texrender = NULL;
+		if (!linear_sample) {
+			extra_texrender =
+				gs_texrender_create(GS_BGRA, GS_ZS_NONE);
+			success = extra_texrender != NULL;
+			if (!success)
+				warn("init_shmem_capture: failed to create extra texrender");
+		}
+
+		if (success) {
+			gc->texture_buffers[0] = (uint8_t *)gc->data +
+						 gc->shmem_data->tex1_offset;
+			gc->texture_buffers[1] = (uint8_t *)gc->data +
+						 gc->shmem_data->tex2_offset;
+			gc->convert_16bit = convert_16bit;
+
+			gc->texture = texture;
+			gc->extra_texture = NULL;
+			gc->extra_texrender = extra_texrender;
+			gc->linear_sample = linear_sample;
+			gc->copy_texture = copy_shmem_tex;
+		} else {
+			gs_texture_destroy(texture);
+		}
+	} else {
 		warn("init_shmem_capture: failed to create texture");
-		return false;
 	}
 
-	gc->supports_srgb = true;
-	gc->copy_texture = copy_shmem_tex;
-	return true;
+	return success;
 }
 
 static inline bool init_shtex_capture(struct game_capture *gc)
 {
 	obs_enter_graphics();
+	gs_texrender_destroy(gc->extra_texrender);
+	gc->extra_texrender = NULL;
+	gs_texture_destroy(gc->extra_texture);
+	gc->extra_texture = NULL;
 	gs_texture_destroy(gc->texture);
-	gc->texture = gs_texture_open_shared(gc->shtex_data->tex_handle);
-	enum gs_color_format format = gs_texture_get_color_format(gc->texture);
-	gc->supports_srgb = gs_is_srgb_format(format);
+	gc->texture = NULL;
+	gs_texture_t *const texture =
+		gs_texture_open_shared(gc->shtex_data->tex_handle);
+	bool success = texture != NULL;
+	if (success) {
+		enum gs_color_format format =
+			gs_texture_get_color_format(texture);
+		const bool ten_bit_srgb = (format == GS_R10G10B10A2);
+		enum gs_color_format linear_format =
+			ten_bit_srgb ? GS_BGRA : gs_generalize_format(format);
+		const bool linear_sample = (linear_format == format);
+		gs_texture_t *extra_texture = NULL;
+		gs_texrender_t *extra_texrender = NULL;
+		if (!linear_sample) {
+			if (ten_bit_srgb) {
+				extra_texrender = gs_texrender_create(
+					linear_format, GS_ZS_NONE);
+				success = extra_texrender != NULL;
+				if (!success)
+					warn("init_shtex_capture: failed to create extra texrender");
+			} else {
+				extra_texture = gs_texture_create(
+					gs_texture_get_width(texture),
+					gs_texture_get_height(texture),
+					linear_format, 1, NULL, 0);
+				success = extra_texture != NULL;
+				if (!success)
+					warn("init_shtex_capture: failed to create extra texture");
+			}
+		}
+
+		if (success) {
+			gc->texture = texture;
+			gc->linear_sample = linear_sample;
+			gc->extra_texture = extra_texture;
+			gc->extra_texrender = extra_texrender;
+		} else {
+			gs_texture_destroy(texture);
+		}
+	} else {
+		warn("init_shtex_capture: failed to open shared handle");
+	}
 	obs_leave_graphics();
 
-	if (!gc->texture) {
-		warn("init_shtex_capture: failed to open shared handle");
-		return false;
-	}
-
-	return true;
+	return success;
 }
 
 static bool start_capture(struct game_capture *gc)
@@ -2096,26 +2161,28 @@ static inline void game_capture_render_cursor(struct game_capture *gc)
 		    gc->global_hook_info->cy);
 }
 
-static void game_capture_render(void *data, gs_effect_t *effect)
+static void game_capture_render(void *data, gs_effect_t *unused)
 {
+	UNUSED_PARAMETER(unused);
+
 	struct game_capture *gc = data;
 	if (!gc->texture || !gc->active) {
 		if (gc->config.mode == CAPTURE_MODE_AUTO) {
 			if (gc->placeholder_image.image.texture) {
-				//draw placeholder image 
+				//draw placeholder image
 				effect = obs_get_base_effect( OBS_EFFECT_DEFAULT );
 				gs_technique_t *tech = gs_effect_get_technique(effect, "Draw");
 
-				gs_effect_set_texture(gs_effect_get_param_by_name(effect, "image"), 
+				gs_effect_set_texture(gs_effect_get_param_by_name(effect, "image"),
 							gc->placeholder_image.image.texture);
 
-				struct obs_video_info ovi;	
+				struct obs_video_info ovi;
 				obs_get_video_info(&ovi);
 
 				int passes = gs_technique_begin(tech);
 				for (int i = 0; i < passes; i++) {
 					gs_technique_begin_pass(tech, i);
-					gs_draw_sprite(gc->placeholder_image.image.texture, 
+					gs_draw_sprite(gc->placeholder_image.image.texture,
 							0, ovi.base_width, ovi.base_height);
 					gs_technique_end_pass(tech);
 				}
@@ -2126,7 +2193,7 @@ static void game_capture_render(void *data, gs_effect_t *effect)
 					tech = gs_effect_get_technique(effect, "Draw");
 					float scale = gc->placeholder_text_width / (float)ovi.base_width;
 
-					gs_effect_set_texture(gs_effect_get_param_by_name(effect, "image"), 
+					gs_effect_set_texture(gs_effect_get_param_by_name(effect, "image"),
 								gc->placeholder_text_texture);
 
 					gs_matrix_push();
@@ -2135,9 +2202,9 @@ static void game_capture_render(void *data, gs_effect_t *effect)
 					int passes = gs_technique_begin(tech);
 					for (int i = 0; i < passes; i++) {
 						gs_technique_begin_pass(tech, i);
-						gs_draw_sprite( gc->placeholder_text_texture, 
-								0, 
-								gc->placeholder_text_width/scale, 
+						gs_draw_sprite( gc->placeholder_text_texture,
+								0,
+								gc->placeholder_text_width/scale,
 								gc->placeholder_text_height/scale);
 						gs_technique_end_pass(tech);
 					}
@@ -2154,9 +2221,9 @@ static void game_capture_render(void *data, gs_effect_t *effect)
 	effect = obs_get_base_effect(gc->config.allow_transparency
 					     ? OBS_EFFECT_DEFAULT
 					     : OBS_EFFECT_OPAQUE);
-	
-	if (gc->config.mode == CAPTURE_MODE_AUTO) {	
-		struct obs_video_info ovi;	
+
+	if (gc->config.mode == CAPTURE_MODE_AUTO) {
+		struct obs_video_info ovi;
 		obs_get_video_info(&ovi);
 		float cx_scale = ovi.base_width/(float)gc->cx;
 		float cy_scale = ovi.base_height/(float)gc->cy;
@@ -2164,31 +2231,48 @@ static void game_capture_render(void *data, gs_effect_t *effect)
 		gs_matrix_scale3f(cx_scale, cy_scale, 1.0f);
 	}
 
-	const bool linear_srgb = gs_get_linear_srgb() && gc->supports_srgb;
-	const bool previous = gs_set_linear_srgb(linear_srgb);
+				gs_texrender_end(texrender);
 
-	while (gs_effect_loop(effect, "Draw")) {
-		obs_source_draw(gc->texture, 0, 0, 0, 0,
-				gc->global_hook_info->flip);
+				texture = gs_texrender_get_texture(texrender);
+			}
+		}
 
-		if (gc->config.allow_transparency && gc->config.cursor &&
+		linear_sample = true;
+	}
+
+	gs_eparam_t *const image = gs_effect_get_param_by_name(effect, "image");
+	const uint32_t flip = gc->global_hook_info->flip ? GS_FLIP_V : 0;
+	const char *tech_name = allow_transparency && !linear_sample
+					? "DrawSrgbDecompress"
+					: "Draw";
+	while (gs_effect_loop(effect, tech_name)) {
+		const bool previous = gs_framebuffer_srgb_enabled();
+		gs_enable_framebuffer_srgb(allow_transparency || linear_sample);
+		gs_enable_blending(allow_transparency);
+		if (linear_sample)
+			gs_effect_set_texture_srgb(image, texture);
+		else
+			gs_effect_set_texture(image, texture);
+		gs_draw_sprite(texture, flip, 0, 0);
+		gs_enable_blending(true);
+		gs_enable_framebuffer_srgb(previous);
+
+		if (allow_transparency && gc->config.cursor &&
 		    !gc->cursor_hidden) {
 			game_capture_render_cursor(gc);
 		}
 	}
 
-	gs_set_linear_srgb(previous);
+	if (!allow_transparency && gc->config.cursor && !gc->cursor_hidden) {
+		gs_effect_t *const default_effect =
+			obs_get_base_effect(OBS_EFFECT_DEFAULT);
 
-	if (!gc->config.allow_transparency && gc->config.cursor &&
-	    !gc->cursor_hidden) {
-		effect = obs_get_base_effect(OBS_EFFECT_DEFAULT);
-
-		while (gs_effect_loop(effect, "Draw")) {
+		while (gs_effect_loop(default_effect, "Draw")) {
 			game_capture_render_cursor(gc);
 		}
 	}
 
-	if (gc->config.mode == CAPTURE_MODE_AUTO) {	
+	if (gc->config.mode == CAPTURE_MODE_AUTO) {
 		gs_matrix_pop();
 	}
 }
@@ -2197,10 +2281,10 @@ static uint32_t game_capture_width(void *data)
 {
 	struct game_capture *gc = data;
 	if (gc->config.mode == CAPTURE_MODE_AUTO) {
-		struct obs_video_info ovi;	
+		struct obs_video_info ovi;
 		obs_get_video_info(&ovi);
 		return ovi.base_width;
-	} else 
+	} else
 		return gc->active ? gc->cx : 0;
 }
 
@@ -2208,10 +2292,10 @@ static uint32_t game_capture_height(void *data)
 {
 	struct game_capture *gc = data;
 	if (gc->config.mode == CAPTURE_MODE_AUTO) {
-		struct obs_video_info ovi;	
+		struct obs_video_info ovi;
 		obs_get_video_info(&ovi);
 		return ovi.base_height;
-	} else 
+	} else
 		return gc->active ? gc->cy : 0;
 }
 
@@ -2265,10 +2349,10 @@ static bool mode_callback(obs_properties_t *ppts, obs_property_t *p,
 	p = obs_properties_get(ppts, SETTING_WINDOW_PRIORITY);
 	obs_property_set_visible(p, capture_window);
 
-	//some settings hidden in auto game capture mode 
+	//some settings hidden in auto game capture mode
 	p = obs_properties_get(ppts, SETTING_LIMIT_FRAMERATE);
 	obs_property_set_visible(p, !capture_window_auto);
-	
+
 	p = obs_properties_get(ppts, SETTING_AUTO_LIST_FILE);
 	obs_property_set_visible(p, false);
 
@@ -2455,7 +2539,7 @@ static obs_properties_t *game_capture_properties(void *data)
 
 	obs_properties_add_text(ppts, SETTING_AUTO_LIST_FILE,
 				SETTING_AUTO_LIST_FILE, OBS_TEXT_DEFAULT);
-	
+
 	obs_properties_add_text(ppts, SETTING_PLACEHOLDER_IMG,
 				SETTING_PLACEHOLDER_IMG, OBS_TEXT_DEFAULT);
 
