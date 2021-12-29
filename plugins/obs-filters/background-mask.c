@@ -1,9 +1,5 @@
 #include <obs-module.h>
-#ifdef WIN32
-#include "background-matting/win/include/c_api.h"
-#elif __APPLE__
-#include "background-matting/apple/include/c_api.h"
-#endif
+#include "c_api.h"
 #include <media-io/video-scaler.h>
 
 #define TFLITE_WIDTH  256

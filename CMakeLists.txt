@@ -8,7 +8,8 @@ endif()
 project(obs-studio)
 
 option(DEBUG_FFMPEG_MUX "Debug FFmpeg muxer subprocess" FALSE)
-set (CMAKE_PREFIX_PATH "/usr/local/Cellar/qt@5/5.15.2/")
+option(BUILD_FOR_ELECTRON "build for electron node" FALSE)
+
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 if(WIN32)

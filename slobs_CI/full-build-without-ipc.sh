@@ -95,6 +95,7 @@ configure_obs_build() {
         -DWITH_RTMPS=ON \
         -DCEF_ROOT_DIR="${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64" \
         -DCMAKE_BUILD_TYPE="${BUILD_CONFIG}" \
+        -DBUILD_FOR_ELECTRON=ON \
         ..
 
 }
