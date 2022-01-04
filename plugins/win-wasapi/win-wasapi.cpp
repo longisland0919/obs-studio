@@ -11,7 +11,6 @@
 #include <util/util_uint64.h>
 
 #include <thread>
-#include <mutex>
 
 using namespace std;
 
@@ -31,21 +30,16 @@ class WASAPISource {
 	ComPtr<IMMDeviceEnumerator> enumerator;
 	ComPtr<IMMNotificationClient> notify;
 
-	static const int MAX_RETRY_INIT_DEVICE_COUNTER = 3;
-
 	obs_source_t *source;
 	wstring default_id;
 	string device_id;
 	string device_name;
 	string device_sample = "-";
+	uint64_t lastNotifyTime = 0;
 	bool isInputDevice;
 	bool useDeviceTiming = false;
 	bool isDefaultDevice = false;
 
-	recursive_mutex state_mutex;
-	bool initInterrupted = false;
-	bool changeStarted = false;
-	bool initializing = false;
 	bool reconnecting = false;
 	bool previouslyFailed = false;
 	WinHandle reconnectThread;
@@ -69,8 +63,7 @@ class WASAPISource {
 	inline void Stop();
 	void Reconnect();
 
-	HRESULT _InitDevice(IMMDeviceEnumerator *enumerator, bool defaultDevice);
-	HRESULT InitDevice(IMMDeviceEnumerator *enumerator);
+	bool InitDevice();
 	void InitName();
 	void InitClient();
 	void InitRender();
@@ -79,12 +72,12 @@ class WASAPISource {
 	void Initialize();
 
 	bool TryInitialize();
+
 	void UpdateSettings(obs_data_t *settings);
-	void ThrowOnInterrupt(std::string message);
 
 public:
 	WASAPISource(obs_data_t *settings, obs_source_t *source_, bool input);
-	virtual ~WASAPISource();
+	inline ~WASAPISource();
 
 	void Update(obs_data_t *settings);
 
@@ -143,23 +136,18 @@ public:
 };
 
 WASAPISource::WASAPISource(obs_data_t *settings, obs_source_t *source_,
-		bool input)
-	: source          (source_),
-	  isInputDevice   (input)
+			   bool input)
+	: source(source_), isInputDevice(input)
 {
 	UpdateSettings(settings);
-	if (device_id.compare("does_not_exist") == 0)
-		return;
-
-	blog(LOG_INFO, "[WASAPISource][%08X] WASAPI Source constructor", this);
 
 	stopSignal = CreateEvent(nullptr, true, false, nullptr);
 	if (!stopSignal.Valid())
-		throw "[WASAPISource] Could not create stop signal";
+		throw "Could not create stop signal";
 
 	receiveSignal = CreateEvent(nullptr, false, false, nullptr);
 	if (!receiveSignal.Valid())
-		throw "[WASAPISource] Could not create receive signal";
+		throw "Could not create receive signal";
 
 	Start();
 }
@@ -168,43 +156,32 @@ inline void WASAPISource::Start()
 {
 	if (!TryInitialize()) {
 		blog(LOG_INFO,
-		     "[WASAPISource::Start][%08X] "
+		     "[WASAPISource::WASAPISource] "
 		     "Device '%s' not found.  Waiting for device",
-		     this, device_id.c_str());
+		     device_id.c_str());
 		Reconnect();
 	}
 }
 
 inline void WASAPISource::Stop()
 {
-	if (device_id.compare("does_not_exist") == 0)
-		return;
-
-	blog(LOG_INFO, "[WASAPISource::Stop][%08X] Device '%s' Stop called", this,
-		device_id.c_str());
-
 	SetEvent(stopSignal);
 
-	if (active || captureThread.Valid()) {
-		blog(LOG_INFO, "[WASAPISource::Stop][%08X] Device '%s' Wait for captureThread to stop", this,
-		     device_id.c_str());
+	if (active) {
+		blog(LOG_INFO, "WASAPI: Device '%s' Terminated",
+		     device_name.c_str());
 		WaitForSingleObject(captureThread, INFINITE);
 	}
 
-	if (reconnecting || reconnectThread.Valid()) {
-		blog(LOG_INFO, "[WASAPISource::Stop][%08X] Device '%s' Wait for reconnectThread to stop", this,
-		     device_id.c_str());
-
+	if (reconnecting)
 		WaitForSingleObject(reconnectThread, INFINITE);
-	}
 
 	ResetEvent(stopSignal);
 }
 
-WASAPISource::~WASAPISource()
+inline WASAPISource::~WASAPISource()
 {
-	if (enumerator.Get() != nullptr && notify.Get() != nullptr)
-		enumerator->UnregisterEndpointNotificationCallback(notify);
+	enumerator->UnregisterEndpointNotificationCallback(notify);
 	Stop();
 }
 
@@ -229,7 +206,7 @@ void WASAPISource::Update(obs_data_t *settings)
 		Start();
 }
 
-HRESULT WASAPISource::_InitDevice(IMMDeviceEnumerator *enumerator, bool defaultDevice)
+bool WASAPISource::InitDevice()
 {
 	HRESULT res;
 
@@ -244,6 +221,7 @@ HRESULT WASAPISource::_InitDevice(IMMDeviceEnumerator *enumerator, bool defaultD
 		CoTaskMemPtr<wchar_t> id;
 		res = device->GetId(&id);
 		default_id = id;
+
 	} else {
 		wchar_t *w_id;
 		os_utf8_to_wcs_ptr(device_id.c_str(), device_id.size(), &w_id);
@@ -253,49 +231,10 @@ HRESULT WASAPISource::_InitDevice(IMMDeviceEnumerator *enumerator, bool defaultD
 		bfree(w_id);
 	}
 
-	blog(LOG_INFO, "[WASAPISource::_InitDevice][%08X]: Returning device pointer = %08x",
-		this, device.Get());
-	return res;
-}
-
-HRESULT WASAPISource::InitDevice(IMMDeviceEnumerator *enumerator)
-{
-	HRESULT res = -1;
-	std::vector<AudioDeviceInfo> devices;
-	res = _InitDevice(enumerator, isDefaultDevice);
-
-	if (device_name.empty())
-		device_name = GetDeviceName(device);
-
-	if (SUCCEEDED(res))
-		return res;
-
-	if (!device_name.empty()) {
-		blog(LOG_INFO, "[WASAPISource::InitDevice][%08X]: Failed to init device and device name not empty '%s'",
-		     this, device_name.c_str());
-		devices.clear();
-		GetWASAPIAudioDevices(devices, isInputDevice, device_name);
-		if (devices.size()) {
-			blog(LOG_INFO, "[WASAPISource::InitDevice][%08X]: Use divice from GetWASAPIAudioDevices, name '%s'",
-			     this, device_name.c_str());
-
-			this->device = devices[0].device;
-			this->device_id = devices[0].id;
-			res = 0;
-			return res;
-		}
-	}
-	return res;
+	return SUCCEEDED(res);
 }
 
 #define BUFFER_TIME_100NS (5 * 10000000)
-
-void WASAPISource::ThrowOnInterrupt(std::string message)
-{
-	std::lock_guard<std::recursive_mutex> guard(state_mutex);
-	if (initInterrupted) 
-		throw message.c_str();
-}
 
 void WASAPISource::InitClient()
 {
@@ -303,29 +242,24 @@ void WASAPISource::InitClient()
 	HRESULT res;
 	DWORD flags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
 
-	ThrowOnInterrupt("[WASAPISource::InitClient]: Interrupted before device Activate");
 	res = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
 			       (void **)client.Assign());
 	if (FAILED(res))
-		throw HRError(
-			"[WASAPISource::InitClient] Failed to activate client context",
-			res);
+		throw HRError("Failed to activate client context", res);
 
-	ThrowOnInterrupt("[WASAPISource::InitClient]: Interrupted before GetMixFormat");
 	res = client->GetMixFormat(&wfex);
 	if (FAILED(res))
-		throw HRError("[WASAPISource::InitClient] Failed to get mix format", res);
+		throw HRError("Failed to get mix format", res);
 
 	InitFormat(wfex);
 
 	if (!isInputDevice)
 		flags |= AUDCLNT_STREAMFLAGS_LOOPBACK;
 
-	ThrowOnInterrupt("[WASAPISource::InitClient]: Interrupted before client Initialize");
 	res = client->Initialize(AUDCLNT_SHAREMODE_SHARED, flags,
 				 BUFFER_TIME_100NS, 0, wfex, nullptr);
 	if (FAILED(res))
-		throw HRError("[WASAPISource::InitClient] Failed to get initialize audio client", res);
+		throw HRError("Failed to get initialize audio client", res);
 }
 
 void WASAPISource::InitRender()
@@ -336,22 +270,19 @@ void WASAPISource::InitRender()
 	UINT32 frames;
 	ComPtr<IAudioClient> client;
 
-	ThrowOnInterrupt("[WASAPISource::InitRender]: Interrupted before device Activate");
 	res = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
 			       (void **)client.Assign());
 	if (FAILED(res))
-		throw HRError("[WASAPISource::InitRender] Failed to activate client context", res);
+		throw HRError("Failed to activate client context", res);
 
-	ThrowOnInterrupt("[WASAPISource::InitRender]: Interrupted before GetMixFormat");
 	res = client->GetMixFormat(&wfex);
 	if (FAILED(res))
-		throw HRError("[WASAPISource::InitRender] Failed to get mix format", res);
+		throw HRError("Failed to get mix format", res);
 
-	ThrowOnInterrupt("[WASAPISource::InitRender]: Interrupted client Initialize");
 	res = client->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, BUFFER_TIME_100NS,
 				 0, wfex, nullptr);
 	if (FAILED(res))
-		throw HRError("[WASAPISource::InitRender] Failed to get initialize audio client", res);
+		throw HRError("Failed to get initialize audio client", res);
 
 	/* Silent loopback fix. Prevents audio stream from stopping and */
 	/* messing up timestamps and other weird glitches during silence */
@@ -359,18 +290,16 @@ void WASAPISource::InitRender()
 
 	res = client->GetBufferSize(&frames);
 	if (FAILED(res))
-		throw HRError("[WASAPISource::InitRender] Failed to get buffer size", res);
+		throw HRError("Failed to get buffer size", res);
 
-	ThrowOnInterrupt("[WASAPISource::InitRender]: Interrupted client GetService");
 	res = client->GetService(__uuidof(IAudioRenderClient),
 				 (void **)render.Assign());
 	if (FAILED(res))
-		throw HRError("[WASAPISource::InitRender] Failed to get render client", res);
+		throw HRError("Failed to get render client", res);
 
-	ThrowOnInterrupt("[WASAPISource::InitRender]: Interrupted client GetBuffer");
 	res = render->GetBuffer(frames, &buffer);
 	if (FAILED(res))
-		throw HRError("[WASAPISource::InitRender] Failed to get buffer", res);
+		throw HRError("Failed to get buffer", res);
 
 	memset(buffer, 0, frames * wfex->nBlockAlign);
 
@@ -412,58 +341,41 @@ void WASAPISource::InitFormat(WAVEFORMATEX *wfex)
 
 void WASAPISource::InitCapture()
 {
-	if (client.Get() == nullptr)
-		throw "[WASAPISource::InitCapture] Failed to create a valid client";
-
-	HRESULT res;
-	{
-		::lock_guard<std::recursive_mutex> guard(state_mutex);
-		ThrowOnInterrupt("[WASAPISource::InitCapture]: Interrupted before client GetService");
-		res = client->GetService(__uuidof(IAudioCaptureClient),
+	HRESULT res = client->GetService(__uuidof(IAudioCaptureClient),
 					 (void **)capture.Assign());
-	}
 	if (FAILED(res))
-		throw HRError("[WASAPISource::InitCapture] Failed to create capture context", res);
+		throw HRError("Failed to create capture context", res);
 
-	ThrowOnInterrupt("[WASAPISource::InitCapture]: Interrupted before client SetEventHandle");
 	res = client->SetEventHandle(receiveSignal);
 	if (FAILED(res))
-		throw HRError("[WASAPISource::InitCapture] Failed to set event handle", res);
+		throw HRError("Failed to set event handle", res);
 
-	{
-		std::lock_guard<std::recursive_mutex> guard(state_mutex);
-		ThrowOnInterrupt("[WASAPISource::InitCapture]: Interrupted before client start");
-		initializing = false;
+	captureThread = CreateThread(nullptr, 0, WASAPISource::CaptureThread,
+				     this, 0, nullptr);
+	if (!captureThread.Valid())
+		throw "Failed to create capture thread";
 
-		captureThread = CreateThread(nullptr, 0, WASAPISource::CaptureThread,
-					this, 0, nullptr);
-		if (!captureThread.Valid())
-			throw "[WASAPISource::InitCapture] Failed to create capture thread";
+	client->Start();
+	active = true;
 
-		client->Start();
-		active = true;
-	}
-
-	blog(LOG_INFO, "[WASAPISource::InitCapture][%08X] Device '%s' [%s Hz] initialized",
-	     this, device_name.c_str(), device_sample.c_str());
+	blog(LOG_INFO, "WASAPI: Device '%s' [%s Hz] initialized",
+	     device_name.c_str(), device_sample.c_str());
 }
 
 void WASAPISource::Initialize()
 {
-	blog(LOG_INFO, "[WASAPISource::Initialize][%08X] Device initialize called", this);
 	HRESULT res;
 
 	res = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
 			       CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
 			       (void **)enumerator.Assign());
 	if (FAILED(res))
-		throw HRError("[WASAPISource::Initialize] Failed to create enumerator", res);
+		throw HRError("Failed to create enumerator", res);
 
-	res = InitDevice(enumerator);
+	if (!InitDevice())
+		return;
 
-	if (FAILED(res) || device.Get() == nullptr) {
-		throw HRError("[WASAPISource::Initialize] Failed to init device", res);
-	}
+	device_name = GetDeviceName(device);
 
 	if (!notify) {
 		notify = new WASAPINotify(this);
@@ -474,11 +386,6 @@ void WASAPISource::Initialize()
 	IPropertyStore *store = nullptr;
 	PWAVEFORMATEX deviceFormatProperties;
 	PROPVARIANT prop;
-
-	blog(LOG_INFO, "[WASAPISource::Initialize][%08X] Device '%s':'%08x' Initialization ready to call OpenPropertyStore",
-	     this, device_name.c_str(), device.Get());
-
-	ThrowOnInterrupt("[WASAPISource::Initialize]: Interrupted before device OpenPropertyStore");
 	resSample = device->OpenPropertyStore(STGM_READ, &store);
 	if (!FAILED(resSample)) {
 		resSample =
@@ -495,9 +402,6 @@ void WASAPISource::Initialize()
 		store->Release();
 	}
 
-	blog(LOG_INFO, "[WASAPISource::Initialize][%08X] Device '%s':'%08x' Initialization ready to init Client",
-	     this, device_name.c_str(), device.Get());
-
 	InitClient();
 	if (!isInputDevice)
 		InitRender();
@@ -506,44 +410,28 @@ void WASAPISource::Initialize()
 
 bool WASAPISource::TryInitialize()
 {
-	//active is true after client started capture in capturethread
 	try {
-		{
-			std::lock_guard<std::recursive_mutex> guard(state_mutex);
-			initializing = true;
-			changeStarted = false;
-		}
-
 		Initialize();
+
 	} catch (HRError &error) {
-		if (previouslyFailed) {
+		if (previouslyFailed)
 			return active;
-		}
 
-		blog(LOG_WARNING, "[WASAPISource::TryInitialize][%08X]:[%s] %s: %lX", this,
-				device_name.empty() ? device_id.c_str(): device_name.c_str(),
+		blog(LOG_WARNING, "[WASAPISource::TryInitialize]:[%s] %s: %lX",
+		     device_name.empty() ? device_id.c_str()
+					 : device_name.c_str(),
 		     error.str, error.hr);
-	} catch (const char *error) {
-		if (previouslyFailed) {
-			return active;
-		}
 
-		blog(LOG_WARNING, "[WASAPISource::TryInitialize][%08X]:[%s] %s", this, 
+	} catch (const char *error) {
+		if (previouslyFailed)
+			return active;
+
+		blog(LOG_WARNING, "[WASAPISource::TryInitialize]:[%s] %s",
 		     device_name.empty() ? device_id.c_str()
 					 : device_name.c_str(),
 		     error);
-	} catch (...) {
-		if (previouslyFailed) {
-			return active;
-		}
-		blog(LOG_WARNING, "[WASAPISource::TryInitialize][%08X] Catch [%s] failed", this,
-		     device_name.empty() ? device_id.c_str() : device_name.c_str());
 	}
-	{
-		std::lock_guard<std::recursive_mutex> guard(state_mutex);	
-		initializing = false;
-		initInterrupted = false;
-	}
+
 	previouslyFailed = !active;
 	return active;
 }
@@ -554,16 +442,13 @@ void WASAPISource::Reconnect()
 	reconnectThread = CreateThread(
 		nullptr, 0, WASAPISource::ReconnectThread, this, 0, nullptr);
 
-	if (!reconnectThread.Valid()) {
+	if (!reconnectThread.Valid())
 		blog(LOG_WARNING,
-		     "[WASAPISource::Reconnect][%08X] "
+		     "[WASAPISource::Reconnect] "
 		     "Failed to initialize reconnect thread: %lu",
-		     this, GetLastError());
-		     reconnecting = false;
-	}
+		     GetLastError());
 }
 
-//returns false for wait timed out
 static inline bool WaitForSignal(HANDLE handle, DWORD time)
 {
 	return WaitForSingleObject(handle, time) != WAIT_TIMEOUT;
@@ -581,9 +466,9 @@ DWORD WINAPI WASAPISource::ReconnectThread(LPVOID param)
 	const bool com_initialized = SUCCEEDED(hr);
 	if (!com_initialized) {
 		blog(LOG_ERROR,
-		     "[WASAPISource::ReconnectThread][%08X]"
+		     "[WASAPISource::ReconnectThread]"
 		     " CoInitializeEx failed: 0x%08X",
-		     source, hr);
+		     hr);
 	}
 
 	obs_monitoring_type type =
@@ -603,9 +488,6 @@ DWORD WINAPI WASAPISource::ReconnectThread(LPVOID param)
 
 	source->reconnectThread = nullptr;
 	source->reconnecting = false;
-	blog(LOG_WARNING,
-		     "[WASAPISource::ReconnectThread][%08X] "
-		     "Thread finished", source);
 	return 0;
 }
 
@@ -618,16 +500,16 @@ bool WASAPISource::ProcessCaptureData()
 	UINT64 pos, ts;
 	UINT captureSize = 0;
 
-	while (active) {
+	while (true) {
 		res = capture->GetNextPacketSize(&captureSize);
 
 		if (FAILED(res)) {
 			if (res != AUDCLNT_E_DEVICE_INVALIDATED)
 				blog(LOG_WARNING,
-				     "[WASAPISource::GetCaptureData][%08X]"
+				     "[WASAPISource::GetCaptureData]"
 				     " capture->GetNextPacketSize"
 				     " failed: %lX",
-				     this, res);
+				     res);
 			return false;
 		}
 
@@ -638,22 +520,20 @@ bool WASAPISource::ProcessCaptureData()
 		if (FAILED(res)) {
 			if (res != AUDCLNT_E_DEVICE_INVALIDATED)
 				blog(LOG_WARNING,
-				     "[WASAPISource::GetCaptureData][%08X]"
+				     "[WASAPISource::GetCaptureData]"
 				     " capture->GetBuffer"
 				     " failed: %lX",
-				     this, res);
+				     res);
 			return false;
 		}
 
-		obs_source_audio data = {0};
-		data.data[0]          = (const uint8_t*)buffer;
-		data.frames           = (uint32_t)frames;
-		data.speakers         = speakers;
-		data.samples_per_sec  = sampleRate;
-		data.format           = format;
-		data.timestamp        = useDeviceTiming ?
-			ts*100 : os_gettime_ns();
-
+		obs_source_audio data = {};
+		data.data[0] = (const uint8_t *)buffer;
+		data.frames = (uint32_t)frames;
+		data.speakers = speakers;
+		data.samples_per_sec = sampleRate;
+		data.format = format;
+		data.timestamp = useDeviceTiming ? ts * 100 : os_gettime_ns();
 
 		if (!useDeviceTiming)
 			data.timestamp -= util_mul_div64(frames, 1000000000ULL,
@@ -680,8 +560,6 @@ DWORD WINAPI WASAPISource::CaptureThread(LPVOID param)
 {
 	WASAPISource *source = (WASAPISource *)param;
 	bool reconnect = false;
-	blog(LOG_INFO, "[WASAPISource::CaptureThread][%08X] Device '%s' capture thread started",
-	     source, source->device_name.c_str());
 
 	/* Output devices don't signal, so just make it check every 10 ms */
 	DWORD dur = source->isInputDevice ? RECONNECT_INTERVAL : 10;
@@ -703,12 +581,9 @@ DWORD WINAPI WASAPISource::CaptureThread(LPVOID param)
 	source->active = false;
 
 	if (reconnect) {
-		blog(LOG_INFO, "[WASAPISource::CaptureThread][%08X] Device '%s' invalidated. Reconnect",
-		     source, source->device_name.c_str());
+		blog(LOG_INFO, "Device '%s' invalidated.  Retrying",
+		     source->device_name.c_str());
 		source->Reconnect();
-	} else {
-		blog(LOG_INFO, "[WASAPISource::CaptureThread][%08X] Device '%s' invalidated. Finish",
-		     source, source->device_name.c_str());
 	}
 
 	return 0;
@@ -727,23 +602,20 @@ void WASAPISource::SetDefaultDevice(EDataFlow flow, ERole role, LPCWSTR id)
 	if (id && default_id.compare(id) == 0)
 		return;
 
-	blog(LOG_INFO, "[WASAPISource::SetDefaultDevice][%08X] Default %s device changed, name was '%s'",
-	     this, isInputDevice ? "input" : "output",
-	     device_name.empty() ? device_id.c_str() : device_name.c_str());
+	blog(LOG_INFO, "WASAPI: Default %s device changed",
+	     isInputDevice ? "input" : "output");
 
-	std::lock_guard<std::recursive_mutex> guard(state_mutex);	
+	/* reset device only once every 300ms */
+	uint64_t t = os_gettime_ns();
+	if (t - lastNotifyTime < 300000000)
+		return;
 
-	if (initializing) {
-		initInterrupted = true;
-	} else {
-		if (!changeStarted) {
-			changeStarted = true;
-			std::thread([this]() {
-				Stop();
-				Start();
-			}).detach();
-		}
-	}
+	std::thread([this]() {
+		Stop();
+		Start();
+	}).detach();
+
+	lastNotifyTime = t;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -776,7 +648,7 @@ static void *CreateWASAPISource(obs_data_t *settings, obs_source_t *source,
 	try {
 		return new WASAPISource(settings, source, input);
 	} catch (const char *error) {
-		blog(LOG_ERROR, "[WASAPISource][CreateWASAPISource] Catch %s", error);
+		blog(LOG_ERROR, "[CreateWASAPISource] %s", error);
 	}
 
 	return nullptr;
@@ -818,9 +690,9 @@ static obs_properties_t *GetWASAPIProperties(bool input)
 			device_prop, obs_module_text("Default"), "default");
 
 	for (size_t i = 0; i < devices.size(); i++) {
-		AudioDeviceInfo &device_i = devices[i];
-		obs_property_list_add_string(device_prop, device_i.name.c_str(),
-					     device_i.id.c_str());
+		AudioDeviceInfo &device = devices[i];
+		obs_property_list_add_string(device_prop, device.name.c_str(),
+					     device.id.c_str());
 	}
 
 	obs_properties_add_bool(props, OPT_USE_DEVICE_TIMING,

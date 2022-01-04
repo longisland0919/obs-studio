@@ -87,21 +87,15 @@ set(obs-filters_SOURCES
 	compressor-filter.c
 	limiter-filter.c
 	expander-filter.c
-	luma-key-filter.c
-		background-mask.c
-		circle-avatar-filter.c)
+	luma-key-filter.c)
 
 if(WIN32)
 	set(MODULE_DESCRIPTION "OBS A/V Filters")
 	configure_file(${CMAKE_SOURCE_DIR}/cmake/winrc/obs-module.rc.in obs-filters.rc)
 	list(APPEND obs-filters_SOURCES
 		obs-filters.rc)
-	set(TENSORFLOW_PATH "${CMAKE_CURRENT_SOURCE_DIR}/background-matting/win/")	
-elseif(APPLE)
-	set(TENSORFLOW_PATH "${CMAKE_CURRENT_SOURCE_DIR}/background-matting/apple/")
 endif()
-link_directories("${TENSORFLOW_PATH}/plugins")
-include_directories("${TENSORFLOW_PATH}/include")
+
 
 add_library(obs-filters MODULE
 	${rnnoise_SOURCES}
@@ -112,18 +106,7 @@ add_library(obs-filters MODULE
 target_link_libraries(obs-filters
 	libobs
 	${obs-filters_PLATFORM_DEPS}
-	${obs-filters_NOISEREDUCTION_LIBRARIES}
-	"tensorflowlite_c")
+	${obs-filters_NOISEREDUCTION_LIBRARIES})
 set_target_properties(obs-filters PROPERTIES FOLDER "plugins")
 
 install_obs_plugin_with_data(obs-filters data)
-
-if(WIN32)
-	install_obs_data_from_abs_path(obs-filters
-			${TENSORFLOW_PATH}/plugins/
-			../bin/64bit/)
-elseif(APPLE)
-	install_obs_data_from_abs_path(obs-filters
-			${TENSORFLOW_PATH}/plugins/
-			../bin/)
-endif()

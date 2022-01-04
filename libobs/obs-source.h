@@ -520,6 +520,8 @@ struct obs_source_info {
 			  struct audio_output_data *audio_output,
 			  size_t channels, size_t sample_rate);
 
+	bool (*add_custom_data)(void* data, void *custom_ptr);
+
 	/** Icon type for the source */
 	enum obs_icon_type icon_type;
 

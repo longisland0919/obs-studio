@@ -628,11 +628,7 @@ static void ss_destroy(void *data)
 {
 	struct slideshow *ss = data;
 
-	if (obs_scene_is_present(ss->transition) || obs_source_is_present(ss->transition))
-	{
-		obs_source_release(ss->transition);
-	}
-	
+	obs_source_release(ss->transition);
 	free_files(&ss->files.da);
 	pthread_mutex_destroy(&ss->mutex);
 	bfree(ss);

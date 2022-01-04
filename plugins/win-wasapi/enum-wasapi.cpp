@@ -1,16 +1,15 @@
 #include "enum-wasapi.hpp"
 
 #include <util/base.h>
+#include <util/platform.h>
 #include <util/windows/HRError.hpp>
+#include <util/windows/ComPtr.hpp>
 #include <util/windows/CoTaskMemPtr.hpp>
 
 using namespace std;
 
-string GetDeviceName(IMMDevice* device)
+string GetDeviceName(IMMDevice *device)
 {
-	if (!device) {
-		return "";
-	}
 	string device_name;
 	ComPtr<IPropertyStore> store;
 	HRESULT res;
@@ -25,17 +24,19 @@ string GetDeviceName(IMMDevice* device)
 			size_t len = wcslen(nameVar.pwszVal);
 			size_t size;
 
-			size = os_wcs_to_utf8(nameVar.pwszVal, len, nullptr, 0);
+			size = os_wcs_to_utf8(nameVar.pwszVal, len, nullptr,
+					      0) +
+			       1;
 			device_name.resize(size);
-			os_wcs_to_utf8(nameVar.pwszVal, len, &device_name[0], size);
+			os_wcs_to_utf8(nameVar.pwszVal, len, &device_name[0],
+				       size);
 		}
 	}
 
 	return device_name;
 }
 
-void GetWASAPIAudioDevices_(vector<AudioDeviceInfo> &devices, bool input,
-			    string searchbyName)
+void GetWASAPIAudioDevices_(vector<AudioDeviceInfo> &devices, bool input)
 {
 	ComPtr<IMMDeviceEnumerator> enumerator;
 	ComPtr<IMMDeviceCollection> collection;
@@ -73,27 +74,22 @@ void GetWASAPIAudioDevices_(vector<AudioDeviceInfo> &devices, bool input,
 			continue;
 
 		info.name = GetDeviceName(device);
+
 		len = wcslen(w_id);
-		size = os_wcs_to_utf8(w_id, len, nullptr, 0);
+		size = os_wcs_to_utf8(w_id, len, nullptr, 0) + 1;
 		info.id.resize(size);
 		os_wcs_to_utf8(w_id, len, &info.id[0], size);
 
-		if (!searchbyName.empty() && info.name == searchbyName) {
-			info.device = device;
-			devices.push_back(info);
-			return;
-		}
 		devices.push_back(info);
 	}
 }
 
-void GetWASAPIAudioDevices(vector<AudioDeviceInfo> &devices, bool input,
-			   const string &searchbyName)
+void GetWASAPIAudioDevices(vector<AudioDeviceInfo> &devices, bool input)
 {
 	devices.clear();
 
 	try {
-		GetWASAPIAudioDevices_(devices, input, searchbyName);
+		GetWASAPIAudioDevices_(devices, input);
 
 	} catch (HRError &error) {
 		blog(LOG_WARNING, "[GetWASAPIAudioDevices] %s: %lX", error.str,

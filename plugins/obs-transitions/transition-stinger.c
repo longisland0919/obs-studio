@@ -633,13 +633,6 @@ static bool track_matte_enabled_modified(obs_properties_t *ppts,
 			prop_tp_type, obs_module_text("TransitionPointType"));
 	}
 
-	obs_property_t *prop_matte_layout = obs_properties_get(ppts, "track_matte_layout");
-	obs_property_set_visible(prop_matte_layout, track_matte_enabled);
-	obs_property_t *prop_matte_path = obs_properties_get(ppts, "track_matte_path");
-	obs_property_set_visible(prop_matte_path, track_matte_enabled);
-	obs_property_t *prop_matte_invert = obs_properties_get(ppts, "invert_matte");
-	obs_property_set_visible(prop_matte_invert, track_matte_enabled);
-
 	UNUSED_PARAMETER(p);
 	return true;
 }
@@ -674,12 +667,6 @@ static obs_properties_t *stinger_properties(void *data)
 	{
 		obs_properties_t *track_matte_group = obs_properties_create();
 
-		p = obs_properties_add_bool(track_matte_group,"track_matte_enabled",
-					obs_module_text("TrackMatteEnabled"));
-
-		obs_property_set_modified_callback(
-			p, track_matte_enabled_modified);
-
 		p = obs_properties_add_list(track_matte_group,
 					    "track_matte_layout",
 					    obs_module_text("TrackMatteLayout"),
@@ -713,10 +700,13 @@ static obs_properties_t *stinger_properties(void *data)
 		obs_properties_add_bool(track_matte_group, "invert_matte",
 					obs_module_text("InvertTrackMatte"));
 
-		obs_properties_add_group(
-			ppts, "track_matte_enabled_group",
+		p = obs_properties_add_group(
+			ppts, "track_matte_enabled",
 			obs_module_text("TrackMatteEnabled"),
 			OBS_GROUP_CHECKABLE, track_matte_group);
+
+		obs_property_set_modified_callback(
+			p, track_matte_enabled_modified);
 	}
 
 	// audio output settings

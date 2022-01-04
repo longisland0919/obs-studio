@@ -1,6 +1,5 @@
 project(win-capture)
 
-include_directories(${OBS_JANSSON_INCLUDE_DIRS})
 if(MSVC)
 	set(win-capture_PLATFORM_DEPS
 		w32-pthreads)
@@ -32,8 +31,7 @@ set(win-capture_SOURCES
 	game-capture-file-init.c
 	duplicator-monitor-capture.c
 	plugin-main.c
-	nt-stuff.c
-	screen-capture.c)
+	nt-stuff.c)
 
 add_library(win-capture MODULE
 	${win-capture_SOURCES}
@@ -42,9 +40,7 @@ target_link_libraries(win-capture
 	${win-capture_PLATFORM_DEPS}
 	libobs
 	Dwmapi
-	ipc-util
-	${OBS_JANSSON_IMPORT}
-	)
+	ipc-util)
 set_target_properties(win-capture PROPERTIES FOLDER "plugins/win-capture")
 
 install_obs_plugin_with_data(win-capture data)

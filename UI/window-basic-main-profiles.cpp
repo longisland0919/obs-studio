@@ -306,8 +306,6 @@ bool OBSBasic::CreateProfile(const std::string &newName, bool create_new,
 	config_save_safe(App()->GlobalConfig(), "tmp", nullptr);
 	UpdateTitleBar();
 
-	Auth::Load();
-
 	// Run auto configuration setup wizard when a new profile is made to assist
 	// setting up blank settings
 	if (create_new && showWizardChecked) {

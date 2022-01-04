@@ -5407,3 +5407,14 @@ void obs_source_restore_filters(obs_source_t *source, obs_data_array_t *array)
 
 	da_free(cur_filters);
 }
+
+bool obs_source_add_custom_data(obs_source_t* source, void* data)
+{
+	if (!obs_source_valid(source, "obs_source_add_consume_data"))
+		return false;
+	if (!obs_ptr_valid(data, "obs_source_restore_filters"))
+		return false;
+	if (source->info.add_custom_data)
+		return source->info.add_custom_data(source->context.data, data);
+	return false;
+}

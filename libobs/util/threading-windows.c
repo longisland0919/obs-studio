@@ -20,8 +20,6 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <KnownFolders.h>
-#include <ShlObj_core.h>
 
 #ifdef __MINGW32__
 #include <excpt.h>

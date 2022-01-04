@@ -91,11 +91,10 @@ configure_obs_build() {
         -DDepsPath="/tmp/obsdeps" \
         -DVLCPath="${DEPS_BUILD_DIR}/vlc-${VLC_VERSION:-${CI_VLC_VERSION}}" \
         -DBUILD_BROWSER=ON \
-        -DBROWSER_LEGACY="$(test "${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}" -le 3770 && echo "ON" || echo "OFF")" \
         -DWITH_RTMPS=ON \
-        -DCEF_ROOT_DIR="${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64" \
         -DCMAKE_BUILD_TYPE="${BUILD_CONFIG}" \
         -DBUILD_FOR_ELECTRON=ON \
+        -DBUILD_BROWSER=OFF \
         ..
 
 }
@@ -126,14 +125,14 @@ copy_dependency_lib() {
   /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/vk_swiftshader_icd.json" ./obs-plugins/
 
   #cp obs helper
-  if ! [ "${CEF_MAC_BUILD_VERSION}" -le 3770 ]; then
-      hr "cp obs helper"
-      /bin/cp -R "../plugins/obs-browser/obs64 Helper.app" "./Frameworks/"
-      /bin/cp -R "../plugins/obs-browser/obs64 Helper (GPU).app" "./Frameworks/"
-      /bin/cp -R "../plugins/obs-browser/obs64 Helper (Plugin).app" "./Frameworks/"
-      /bin/cp -R "../plugins/obs-browser/obs64 Helper (Renderer).app" "./Frameworks/"
-  fi
   if [ -f ./obs-plugins/obs-browser.so ]; then
+    if ! [ "${CEF_MAC_BUILD_VERSION}" -le 3770 ]; then
+          hr "cp obs helper"
+          /bin/cp -R "../plugins/obs-browser/obs64 Helper.app" "./Frameworks/"
+          /bin/cp -R "../plugins/obs-browser/obs64 Helper (GPU).app" "./Frameworks/"
+          /bin/cp -R "../plugins/obs-browser/obs64 Helper (Plugin).app" "./Frameworks/"
+          /bin/cp -R "../plugins/obs-browser/obs64 Helper (Renderer).app" "./Frameworks/"
+    fi
     sudo install_name_tool -change \
         @executable_path/../Frameworks/Chromium\ Embedded\ Framework.framework/Chromium\ Embedded\ Framework \
         @rpath/Frameworks/Chromium\ Embedded\ Framework.framework/Chromium\ Embedded\ Framework \
