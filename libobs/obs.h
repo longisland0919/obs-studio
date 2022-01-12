@@ -2408,6 +2408,9 @@ static inline void obs_source_frame_destroy(struct obs_source_frame *frame)
 
 EXPORT void obs_source_frame_copy(struct obs_source_frame *dst,
 				  const struct obs_source_frame *src);
+EXPORT void obs_source_frame_cut_width(struct obs_source_frame *dst,
+					    const struct obs_source_frame *src,
+					    double begin, double end);
 
 /* ------------------------------------------------------------------------- */
 /* Get source icon type */

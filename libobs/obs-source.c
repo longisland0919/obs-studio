@@ -2832,6 +2832,105 @@ void obs_source_frame_copy(struct obs_source_frame *dst,
 	copy_frame_data(dst, src);
 }
 
+static inline void cut_frame_data_plane(struct obs_source_frame *dst,
+					 const struct obs_source_frame *src,
+					 uint32_t plane, double begin, double end)
+{
+	if (dst->data[plane] != NULL && src->data[plane] != NULL)
+	{
+		uint8_t *src_pos, *dst_pos;
+		uint32_t begin_int = src->linesize[plane] * begin;
+		uint32_t end_int = src->linesize[plane] * end;
+		for (uint32_t i = 0; i < src->height; ++i) {
+			src_pos = src->data[plane] + i * src->linesize[plane] + begin_int;
+			dst_pos = dst->data[plane] + i * dst->linesize[plane];
+			memcpy(dst_pos, src_pos, (end_int - begin_int) * sizeof (uint8_t));
+		}
+	}
+}
+
+static void cut_frame_width(struct obs_source_frame *dst,
+			    const struct obs_source_frame *src,
+			    double begin, double end)
+{
+
+	switch (src->format) {
+	case VIDEO_FORMAT_I420: {
+		cut_frame_data_plane(dst, src, 0, begin, end);
+		cut_frame_data_plane(dst, src, 1, begin, end);
+		cut_frame_data_plane(dst, src, 2, begin, end);
+		break;
+	}
+
+	case VIDEO_FORMAT_NV12: {
+		uint32_t double_begin, double_end;
+		double_begin = begin * 2;
+		double_end = end * 2;
+		cut_frame_data_plane(dst, src, 0, begin, end);
+		cut_frame_data_plane(dst, src, 1, begin, end);
+		break;
+	}
+
+	case VIDEO_FORMAT_I444:
+		cut_frame_data_plane(dst, src, 0, begin, end);
+		cut_frame_data_plane(dst, src, 1, begin, end);
+		cut_frame_data_plane(dst, src, 2, begin, end);
+		break;
+	case VIDEO_FORMAT_I422: {
+		uint32_t half_begin, half_end;
+		half_begin = begin / 2;
+		half_end = (end + 1) / 2;
+		cut_frame_data_plane(dst, src, 0, begin, end);
+		cut_frame_data_plane(dst, src, 1, begin, end);
+		cut_frame_data_plane(dst, src, 2, begin, end);
+//		cut_frame_data_plane(dst, src, 1, half_begin, half_end);
+//		cut_frame_data_plane(dst, src, 2, half_begin, half_end);
+		break;
+	}
+	case VIDEO_FORMAT_YVYU:
+	case VIDEO_FORMAT_YUY2:
+	case VIDEO_FORMAT_UYVY:
+	case VIDEO_FORMAT_NONE:
+	case VIDEO_FORMAT_RGBA:
+	case VIDEO_FORMAT_BGRA:
+	case VIDEO_FORMAT_BGRX:
+	case VIDEO_FORMAT_Y800:
+	case VIDEO_FORMAT_BGR3:
+	case VIDEO_FORMAT_AYUV:
+		cut_frame_data_plane(dst, src, 0, begin, end);
+		break;
+
+	case VIDEO_FORMAT_I40A:
+		//	{
+//		uint32_t half_begin, half_end;
+//		half_begin = begin / 2;
+//		half_end = (end + 1) / 2;
+//		cut_frame_data_plane(dst, src, 0, begin, end);
+//		cut_frame_data_plane(dst, src, 1, begin, end);
+//		cut_frame_data_plane(dst, src, 2, begin, end);
+//		cut_frame_data_plane(dst, src, 1, half_begin, half_end);
+//		cut_frame_data_plane(dst, src, 2, half_begin, half_end);
+//		cut_frame_data_plane(dst, src, 3, begin, end);
+//		break;
+//	}
+
+	case VIDEO_FORMAT_I42A:
+	case VIDEO_FORMAT_YUVA:
+		cut_frame_data_plane(dst, src, 0, begin, end);
+		cut_frame_data_plane(dst, src, 1, begin, end);
+		cut_frame_data_plane(dst, src, 2, begin, end);
+		cut_frame_data_plane(dst, src, 3, begin, end);
+		break;
+	}
+}
+
+void obs_source_frame_cut_width(struct obs_source_frame *dst,
+				const struct obs_source_frame *src,
+				double begin, double end)
+{
+	cut_frame_width(dst, src, begin, end);
+}
+
 static inline bool async_texture_changed(struct obs_source *source,
 					 const struct obs_source_frame *frame)
 {
