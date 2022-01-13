@@ -1643,6 +1643,9 @@ EXPORT void obs_sceneitem_remove(obs_sceneitem_t *item);
 /** Adds a scene item. */
 EXPORT void obs_sceneitems_add(obs_scene_t *scene, obs_data_array_t *data);
 
+/** full screen show item. if set true ,you cannot change the pos and the scale*/
+EXPORT void obs_sceneitem_set_fullscreen(obs_sceneitem_t *item, bool enable);
+
 /** Saves Sceneitem into an array, arr **/
 EXPORT void obs_sceneitem_save(obs_sceneitem_t *item, obs_data_array_t *arr);
 

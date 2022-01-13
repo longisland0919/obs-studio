@@ -355,6 +355,19 @@ static inline uint32_t calc_cy(const struct obs_scene_item *item,
 	return (crop_cy > height) ? 2 : (height - crop_cy);
 }
 
+static inline void calc_scale(struct obs_scene_item *item,
+			       uint32_t width, uint32_t height,
+			      struct vec2 *scale)
+{
+	if (item->full_screen) {
+		scale->x = obs->video.ovi.base_width * 1. / width;
+		scale->y = obs->video.ovi.base_height * 1. / height;
+		vec2_copy(&item->scale, scale);
+	} else {
+		vec2_copy(scale, &item->scale);
+	}
+}
+
 static void update_item_transform(struct obs_scene_item *item, bool update_tex)
 {
 	uint32_t width;
@@ -374,7 +387,7 @@ static void update_item_transform(struct obs_scene_item *item, bool update_tex)
 	height = obs_source_get_height(item->source);
 	cx = calc_cx(item, width);
 	cy = calc_cy(item, height);
-	scale = item->scale;
+	calc_scale(item, width, height, &scale);
 	item->last_width = width;
 	item->last_height = height;
 
@@ -1858,6 +1871,7 @@ static obs_sceneitem_t *obs_scene_add_internal(obs_scene_t *scene,
 	item->is_group = strcmp(source->info.id, group_info.id) == 0;
 	item->private_settings = obs_data_create();
 	item->toggle_visibility = OBS_INVALID_HOTKEY_PAIR_ID;
+	item->full_screen = false;
 	os_atomic_set_long(&item->active_refs, 1);
 	vec2_set(&item->scale, 1.0f, 1.0f);
 	matrix4_identity(&item->draw_transform);
@@ -2018,6 +2032,13 @@ void sceneitem_restore(obs_data_t *data, void *vp)
 void obs_sceneitems_add(obs_scene_t *scene, obs_data_array_t *data)
 {
 	obs_data_array_enum(data, sceneitem_restore, scene);
+}
+
+void obs_sceneitem_set_fullscreen(obs_sceneitem_t *item, bool enable)
+{
+	if (!item)
+		return;
+	item->full_screen = enable;
 }
 
 obs_scene_t *obs_sceneitem_get_scene(const obs_sceneitem_t *item)

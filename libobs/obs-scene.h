@@ -54,6 +54,7 @@ struct obs_scene_item {
 	struct vec2 scale;
 	float rot;
 	uint32_t align;
+	bool full_screen;
 
 	/* last width/height of the source, this is used to check whether
 	 * the transform needs updating */
