@@ -114,18 +114,20 @@ copy_dependency_lib() {
   fi
   /bin/mkdir Frameworks
 
-  #cp cef
-  /bin/cp -R \
-  "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework" ./Frameworks/
-  /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/libEGL.dylib" ./obs-plugins/
-  /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/libGLESv2.dylib" ./obs-plugins/
-  /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/libswiftshader_libEGL.dylib" ./obs-plugins/
-  /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/libswiftshader_libGLESv2.dylib" ./obs-plugins/
-  /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/libvk_swiftshader.dylib" ./obs-plugins/
-  /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/vk_swiftshader_icd.json" ./obs-plugins/
+  #cp mac virtual cam plugin
+ /bin/cp -r ${CHECKOUT_DIR}/${BUILD_DIR}/plugins/mac-virtualcam/src/dal-plugin/vizard-mac-virtualcam.plugin ./data/obs-plugins/mac-virtualcam/
 
   #cp obs helper
   if [ -f ./obs-plugins/obs-browser.so ]; then
+      #cp cef
+      /bin/cp -R \
+      "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework" ./Frameworks/
+      /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/libEGL.dylib" ./obs-plugins/
+      /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/libGLESv2.dylib" ./obs-plugins/
+      /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/libswiftshader_libEGL.dylib" ./obs-plugins/
+      /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/libswiftshader_libGLESv2.dylib" ./obs-plugins/
+      /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/libvk_swiftshader.dylib" ./obs-plugins/
+      /bin/cp -f "${DEPS_BUILD_DIR}/cef_binary_${MACOS_CEF_BUILD_VERSION:-${CI_MACOS_CEF_VERSION}}_macosx64/Release/Chromium Embedded Framework.framework/Libraries/vk_swiftshader_icd.json" ./obs-plugins/
     if ! [ "${CEF_MAC_BUILD_VERSION}" -le 3770 ]; then
           hr "cp obs helper"
           /bin/cp -R "../plugins/obs-browser/obs64 Helper.app" "./Frameworks/"
