@@ -535,13 +535,19 @@ static bool mp_media_reset(mp_media_t *m)
 		m->next_ns = 0;
 	}
 
-	m->pause = false;
-
 	if (!active && m->is_local_file && m->v_preload_cb)
 		mp_media_next_video(m, true);
 	if (stopping && m->stop_cb)
 		m->stop_cb(m->opaque);
 	return true;
+}
+
+void mp_media_get_preload_frame(mp_media_t *m)
+{
+	pthread_mutex_lock(&m->mutex);
+	m->need_preload = true;
+	pthread_mutex_unlock(&m->mutex);
+	os_sem_post(m->sem);
 }
 
 static inline bool mp_media_sleep(mp_media_t *m)
@@ -584,6 +590,7 @@ static inline bool mp_media_eof(mp_media_t *m)
 		pthread_mutex_unlock(&m->mutex);
 
 		mp_media_reset(m);
+		m->pause = false;
 	}
 
 	return eof;
@@ -688,13 +695,16 @@ static inline bool mp_media_thread(mp_media_t *m)
 		bool reset, kill, is_active, seek, pause, reset_time;
 		int64_t seek_pos;
 		bool timeout = false;
+		bool need_preload;
 
 		pthread_mutex_lock(&m->mutex);
 		is_active = m->active;
 		pause = m->pause;
+		need_preload = m->need_preload;
+		m->need_preload = false;
 		pthread_mutex_unlock(&m->mutex);
 
-		if (!is_active || pause) {
+		if (!is_active || (pause && !need_preload )) {
 			if (os_sem_wait(m->sem) < 0)
 				return false;
 			if (pause)
@@ -738,6 +748,12 @@ static inline bool mp_media_thread(mp_media_t *m)
 			continue;
 		}
 
+		if (need_preload)
+		{
+			if (m->has_video)
+				mp_media_next_video(m, true);
+			continue;
+		}
 		if (pause)
 			continue;
 
@@ -875,8 +891,10 @@ void mp_media_play(mp_media_t *m, bool loop, bool reconnecting)
 {
 	pthread_mutex_lock(&m->mutex);
 
-	if (m->active)
+	if (m->active) {
+		m->pause = false;
 		m->reset = true;
+	}
 
 	m->looping = loop;
 	m->active = true;
@@ -906,6 +924,7 @@ void mp_media_stop(mp_media_t *m)
 		m->reset = true;
 		m->active = false;
 		m->stopping = true;
+		m->pause = false;
 	}
 	pthread_mutex_unlock(&m->mutex);
 
