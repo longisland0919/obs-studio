@@ -32,10 +32,10 @@
 	FF_LOG_S(s->source, level, format, ##__VA_ARGS__)
 
 enum media_activate_mode {
-	RESTART,
+	RESTART_PLAY,
 	RESTART_PAUSE,
 	CONTINUE_PLAY,
-	CONTINUE_STOP,
+	CONTINUE_PAUSE,
 };
 
 struct ffmpeg_source {
@@ -65,6 +65,7 @@ struct ffmpeg_source {
 //	bool restart_on_activate;
 	bool close_when_inactive;
 	bool seekable;
+	bool need_preload;
 
 	pthread_t reconnect_thread;
 	bool stop_reconnect;
@@ -77,11 +78,42 @@ struct ffmpeg_source {
 	obs_hotkey_pair_id play_pause_hotkey;
 	obs_hotkey_id stop_hotkey;
 };
-
+static char* get_media_state_string(enum obs_media_state state);
 static void set_media_state(void *data, enum obs_media_state state)
 {
 	struct ffmpeg_source *s = data;
 	s->state = state;
+}
+
+static char* get_media_state_string(enum obs_media_state state) {
+	char * media_state_char ;
+	switch (state) {
+	case OBS_MEDIA_STATE_NONE:
+		media_state_char = "OBS_MEDIA_STATE_NONE";
+		break;
+	case OBS_MEDIA_STATE_PLAYING:
+		media_state_char = "OBS_MEDIA_STATE_PLAYING";
+		break;
+	case OBS_MEDIA_STATE_OPENING:
+		media_state_char = "OBS_MEDIA_STATE_OPENING";
+		break;
+	case OBS_MEDIA_STATE_BUFFERING:
+		media_state_char = "OBS_MEDIA_STATE_BUFFERING";
+		break;
+	case OBS_MEDIA_STATE_PAUSED:
+		media_state_char = "OBS_MEDIA_STATE_PAUSED";
+		break;
+	case OBS_MEDIA_STATE_STOPPED:
+		media_state_char = "OBS_MEDIA_STATE_STOPPED";
+		break;
+	case OBS_MEDIA_STATE_ENDED:
+		media_state_char = "OBS_MEDIA_STATE_ENDED";
+		break;
+	case OBS_MEDIA_STATE_ERROR:
+		media_state_char = "OBS_MEDIA_STATE_ERROR";
+		break;
+	}
+	return media_state_char;
 }
 
 static bool is_local_file_modified(obs_properties_t *props,
@@ -268,8 +300,14 @@ static void preload_frame(void *opaque, struct obs_source_frame *f)
 	if (s->close_when_inactive)
 		return;
 
-	if (s->is_clear_on_media_end || s->is_looping)
+	if (s->is_clear_on_media_end || s->is_looping || s->need_preload)
+	{
 		obs_source_preload_video(s->source, f);
+		if (s->need_preload)
+			obs_source_show_preloaded_video(s->source);
+
+		s->need_preload = false;
+	}
 
 	if (!s->is_local_file && os_atomic_set_bool(&s->reconnecting, false))
 		FF_BLOG(LOG_INFO, "Reconnected.");
@@ -328,7 +366,8 @@ static void ffmpeg_source_open(struct ffmpeg_source *s)
 		s->media_valid = mp_media_init(&s->media, &info);
 	}
 }
-
+static void ffmpeg_source_play_pause(void *data, bool pause);
+static void ffmpeg_source_stop(void *data);
 static void ffmpeg_source_start(struct ffmpeg_source *s)
 {
 	if (!s->media_valid)
@@ -358,7 +397,7 @@ static void *ffmpeg_source_reconnect(void *data)
 	if (!s->close_when_inactive || active)
 		ffmpeg_source_open(s);
 
-	if (s->activate_mode != RESTART || active)
+	if (s->activate_mode != RESTART_PLAY || active)
 		ffmpeg_source_start(s);
 
 finish:
@@ -457,11 +496,13 @@ static void ffmpeg_source_update(void *data, obs_data_t *settings)
 	}
 
 	bool active = obs_source_active(s->source);
+	if (s->activate_mode != RESTART_PAUSE && s->activate_mode != CONTINUE_PAUSE)
+		s->need_preload = false;
 	if (!s->close_when_inactive || active)
 		ffmpeg_source_open(s);
 
 	dump_source_info(s, input, input_format);
-	if (s->activate_mode != RESTART || active)
+	if (s->activate_mode != RESTART_PLAY || active)
 		ffmpeg_source_start(s);
 }
 
@@ -619,7 +660,12 @@ static void *ffmpeg_source_create(obs_data_t *settings, obs_source_t *source)
 	proc_handler_add(ph, "void get_nb_frames(out int num_frames)",
 			 get_nb_frames, s);
 
+	s->need_preload = true;
 	ffmpeg_source_update(s, settings);
+	if (s->activate_mode == RESTART_PAUSE || s->activate_mode == CONTINUE_PAUSE)
+	{
+		ffmpeg_source_play_pause(s, true);
+	}
 	return s;
 }
 
@@ -658,10 +704,8 @@ static void ffmpeg_source_play_pause(void *data, bool pause)
 	mp_media_play_pause(&s->media, pause);
 
 	if (pause) {
-
 		set_media_state(s, OBS_MEDIA_STATE_PAUSED);
 	} else {
-
 		set_media_state(s, OBS_MEDIA_STATE_PLAYING);
 		obs_source_media_started(s->source);
 	}
@@ -683,25 +727,27 @@ static void ffmpeg_source_activate(void *data)
 
 //	if (s->restart_on_activate)
 	switch (s->activate_mode) {
-	case RESTART:
+	case RESTART_PLAY:
 		obs_source_media_restart(s->source);
 		break;
 	case CONTINUE_PLAY:
 		ffmpeg_source_play_pause(data, false);
 		break;
 	case RESTART_PAUSE:
-	case CONTINUE_STOP:
+	case CONTINUE_PAUSE:
+		if (s->need_preload) {
+			mp_media_get_preload_frame(&s->media);
+		}
 		break;
 	}
 }
-
 
 static void ffmpeg_source_deactivate(void *data)
 {
 	struct ffmpeg_source *s = data;
 
 	switch (s->activate_mode) {
-	case RESTART:
+	case RESTART_PLAY:
 		if (s->media_valid) {
 			mp_media_stop(&s->media);
 
@@ -716,7 +762,7 @@ static void ffmpeg_source_deactivate(void *data)
 		}
 		break;
 	case CONTINUE_PLAY:
-	case CONTINUE_STOP:
+	case CONTINUE_PAUSE:
 		ffmpeg_source_play_pause(data, true);
 		break;
 	}
