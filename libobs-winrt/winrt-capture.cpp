@@ -294,8 +294,9 @@ winrt_capture_create_item(IGraphicsCaptureItemInterop *const interop_factory,
 			if (FAILED(hr))
 				blog(LOG_ERROR, "CreateForWindow (0x%08X)", hr);
 		} catch (winrt::hresult_error &err) {
-			blog(LOG_ERROR, "CreateForWindow (0x%08X): %ls",
-			     err.code().value, err.message().c_str());
+//			blog(LOG_ERROR, "CreateForWindow (0x%08X): %ls",
+//			     err.code().value, err.message().c_str());
+			blog(LOG_ERROR, "CreateForWindow, hresult_error");
 		} catch (...) {
 			blog(LOG_ERROR, "CreateForWindow (0x%08X)",
 			     winrt::to_hresult().value);
