@@ -86,6 +86,7 @@ static const char *output_signals[] = {
 	"void writing_error(ptr output)",
 	"void connect(ptr output)",
 	"void disconnect(ptr output)",
+	"void keyframe(ptr output)",
 	NULL
 };
 

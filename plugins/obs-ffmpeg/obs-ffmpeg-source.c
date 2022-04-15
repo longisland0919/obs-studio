@@ -750,7 +750,6 @@ static void ffmpeg_source_deactivate(void *data)
 	case RESTART_PLAY:
 		if (s->media_valid) {
 			mp_media_stop(&s->media);
-
 			if (s->is_clear_on_media_end)
 				obs_source_output_video(s->source, NULL);
 		}
