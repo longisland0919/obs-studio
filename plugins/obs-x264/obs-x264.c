@@ -441,12 +441,10 @@ static void update_params(struct obs_x264 *obsx264, obs_data_t *settings,
 		crf = 0;
 	}
 
-	//为了设置ts间隔，先写死，后续再设置
-//	if (keyint_sec)
+	if (keyint_sec)
 		obsx264->params.i_keyint_max =
-			10 * voi->fps_num / voi->fps_den;
-	obsx264->params.i_keyint_min =
-		8 * voi->fps_num / voi->fps_den;
+			keyint_sec * voi->fps_num / voi->fps_den;
+
 	if (!use_bufsize)
 		buffer_size = bitrate;
 
@@ -548,12 +546,11 @@ static void update_params(struct obs_x264 *obsx264, obs_data_t *settings,
 		     "\tfps_den:      %d\n"
 		     "\twidth:        %d\n"
 		     "\theight:       %d\n"
-		     "\tkeyint-max:       %d\n"
-		     "\tkeyint-min:       %d\n",
+		     "\tkeyint-max:       %d\n",
 		     rate_control, obsx264->params.rc.i_vbv_max_bitrate,
 		     obsx264->params.rc.i_vbv_buffer_size,
 		     (int)obsx264->params.rc.f_rf_constant, voi->fps_num,
-		     voi->fps_den, width, height, obsx264->params.i_keyint_max, obsx264->params.i_keyint_min);
+		     voi->fps_den, width, height, obsx264->params.i_keyint_max);
 	}
 }
 
