@@ -31,6 +31,10 @@
 #define warn(format, ...) do_log(LOG_WARNING, format, ##__VA_ARGS__)
 #define info(format, ...) do_log(LOG_INFO, format, ##__VA_ARGS__)
 
+#ifdef ADJUST_EXECUTE_PATH
+static struct dstr EXECUTE_DIR;
+#endif
+
 static const char *ffmpeg_mux_getname(void *type)
 {
 	UNUSED_PARAMETER(type);
@@ -86,7 +90,13 @@ static void *ffmpeg_mux_create(obs_data_t *settings, obs_output_t *output)
 	if (obs_output_get_flags(output) & OBS_OUTPUT_SERVICE)
 		stream->is_network = true;
 
+#ifdef ADJUST_EXECUTE_PATH
+	char * dir  = bstrdup(obs_data_get_string(settings, "ffmpeg_muxer_path"));
+	blog(LOG_ERROR, "dir = %s", dir);
+	dstr_init_move_array(&EXECUTE_DIR, dir);
+#else
 	UNUSED_PARAMETER(settings);
+#endif
 	return stream;
 }
 
@@ -250,7 +260,15 @@ static void build_command_line(struct ffmpeg_muxer *stream, struct dstr *cmd,
 		num_tracks++;
 	}
 
-	dstr_init_move_array(cmd, os_get_executable_path_ptr(FFMPEG_MUX));
+
+#ifdef ADJUST_EXECUTE_PATH
+	dstr_init_copy_dstr(cmd, &EXECUTE_DIR);
+	dstr_cat_ch(cmd, '/');
+	dstr_cat(cmd, FFMPEG_MUX);
+#else
+	dstr_init_move_array(cmd, os_get_executable_path_ptr(
+					  FFMPEG_MUX));
+#endif
 	dstr_insert_ch(cmd, 0, '\"');
 	dstr_cat(cmd, "\" \"");
 
@@ -302,6 +320,18 @@ static void set_file_not_readable_error(struct ffmpeg_muxer *stream,
 	obs_output_set_last_error(stream->output, error_message.array);
 	dstr_free(&error_message);
 	obs_data_release(settings);
+}
+
+void signal_keyframe(struct ffmpeg_muxer *stream, bool lastkey) {
+	struct calldata params;
+	calldata_init(&params);
+	calldata_set_int(&params, "num", stream->keyframes);
+	calldata_set_ptr(&params, "output", stream->output);
+	calldata_set_bool(&params, "lastkey", lastkey);
+	signal_handler_t *sh =
+		obs_output_get_signal_handler(stream->output);
+	signal_handler_signal(sh, "keyframe", &params);
+	calldata_free(&params);
 }
 
 static bool ffmpeg_mux_start(void *data)
@@ -356,6 +386,7 @@ static bool ffmpeg_mux_start(void *data)
 	os_atomic_set_bool(&stream->active, true);
 	os_atomic_set_bool(&stream->capturing, true);
 	stream->total_bytes = 0;
+	stream->keyframes = 0;
 	obs_output_begin_data_capture(stream->output, 0);
 
 	info("Writing file '%s'...", stream->path.array);
@@ -377,6 +408,7 @@ int deactivate(struct ffmpeg_muxer *stream, int code)
 
 	if (active(stream)) {
 		ret = os_process_pipe_destroy(stream->pipe);
+		signal_keyframe(stream, true);
 		stream->pipe = NULL;
 
 		os_atomic_set_bool(&stream->active, false);
@@ -483,6 +515,12 @@ bool write_packet(struct ffmpeg_muxer *stream, struct encoder_packet *packet)
 		warn("os_process_pipe_write for packet data failed");
 		signal_failure(stream);
 		return false;
+	}
+
+	if(packet->keyframe)
+	{
+		stream->keyframes ++;
+		signal_keyframe(stream, false);
 	}
 
 	stream->total_bytes += packet->size;

@@ -251,6 +251,41 @@ static bool coreaudio_init_format(struct coreaudio_data *ca)
 		return false;
 	}
 
+	//当要内录的时候，需要把我们的虚拟声卡作为默认是设备，然后obs再监听这个虚拟声卡，但是当
+	//虚拟声卡是首次安装或者重新启动的时候，系统会将虚拟声卡的默认声道数变成单声道。而我们为了
+	//将虚拟声卡的音频参数调节成和实际输出设备一样，就需要转变虚拟声卡的声道数。这个过程中，
+	//obs有可能监听到的是单声道，而不是转变后的双声道，这样就会导致内录失败，所以我们监听虚拟
+	//声卡之前，需要对监听的格式进行判断，看是否和我们想要的一致，不一致就返回error
+	if(ca->input)
+	{
+		obs_data_t *settings = obs_source_get_settings(ca->source);
+		if (settings)
+		{
+			bool convert = obs_data_get_bool(settings, "need_conversion_format");
+			if (convert)
+			{
+				double sampleRate = obs_data_get_double(settings, "sample_rate");
+				uint32_t channelsPerFrame = obs_data_get_int(settings, "channel_num");
+				if (sampleRate != 0 && channelsPerFrame != 0)
+				{
+					if(desc.mSampleRate != sampleRate || desc.mChannelsPerFrame != channelsPerFrame)
+					{
+						ca_warn(ca, "coreaudio_init_format",
+							"get error format which is not we want, error: "
+							"sampleRate: %f, channelsPerFrame: %u,"
+							" we want: sampleRate: %f, channelsPerFrame: %u",
+							desc.mSampleRate,
+							(unsigned int)desc.mChannelsPerFrame,
+							sampleRate, (unsigned int)channelsPerFrame);
+						obs_data_release(settings);
+						return false;
+					}
+				}
+			}
+		}
+		obs_data_release(settings);
+	}
+
 	ca->format = convert_ca_format(desc.mFormatFlags, desc.mBitsPerChannel);
 	if (ca->format == AUDIO_FORMAT_UNKNOWN) {
 		ca_warn(ca, "coreaudio_init_format",
@@ -469,6 +504,30 @@ static bool coreaudio_init_hooks(struct coreaudio_data *ca)
 				"set device change callback"))
 			return false;
 	}
+
+//	if (astrcmpi(ca->device_uid, "VIZARDDevice") == 0) {
+//		AudioObjectPropertyAddress streamAddr = {
+//			kAudioDevicePropertyStreams,
+//			kAudioDevicePropertyScopeInput,
+//			kAudioObjectPropertyElementMaster};
+//		AudioObjectID streamId = -1;
+//		uint32_t size = sizeof (AudioObjectID);
+//		stat = AudioObjectGetPropertyData(ca->device_id, &streamAddr, 0, NULL, &size, &streamId);
+//		if (streamId < 0)
+//
+//		AudioObjectPropertyAddress addr = {
+//			kAudioStreamPropertyVirtualFormat,
+//			kAudioObjectPropertyScopeGlobal,
+//			kAudioObjectPropertyElementMaster};
+//		stat = AudioObjectAddPropertyListener(ca->device_id + 2,
+//						      &addr,
+//						      notification_callback,
+//						      ca);
+//		ca_success(stat, ca, "coreaudio_init_hooks",
+//				"set kAudioStreamPropertyVirtualFormat change callback" );
+//		blog(LOG_ERROR, "id = %d", ca->device_id);
+//
+//	}
 
 	stat = set_property(ca->unit, kAudioOutputUnitProperty_SetInputCallback,
 			    SCOPE_GLOBAL, 0, &callback_info,

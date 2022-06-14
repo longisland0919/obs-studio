@@ -43,7 +43,6 @@ cmake -H. ^
          -DCOMPILE_D3D12_HOOK=true ^
          -DBUILD_BROWSER=false ^
 	 -DBUILD_FOR_ELECTRON=true ^
-         -DEXPERIMENTAL_SHARED_TEXTURE_SUPPORT=true ^
-         -DCHECK_FOR_SERVICE_UPDATES=true
+         -DEXPERIMENTAL_SHARED_TEXTURE_SUPPORT=true
 
 cmake --build %CD%\build --target install --config %BuildConfig% -v

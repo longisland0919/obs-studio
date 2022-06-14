@@ -56,6 +56,10 @@ if(WIN32)
 		jim-nvenc.h)
 endif()
 
+if(BUILD_FOR_ELECTRON)
+	add_definitions(-DADJUST_EXECUTE_PATH)
+endif()
+
 add_library(obs-ffmpeg MODULE
 	${obs-ffmpeg_config_HEADERS}
 	${obs-ffmpeg_HEADERS}
