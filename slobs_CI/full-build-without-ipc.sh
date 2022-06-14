@@ -37,7 +37,7 @@ ensure_dir() {
 
 CHECKOUT_DIR="$(/usr/bin/git rev-parse --show-toplevel)"
 DEPS_BUILD_DIR="${CHECKOUT_DIR}/../obs-build-dependencies"
-BUILD_DIR="${BUILD_DIR:-build}"
+BUILD_DIR="${BUILD_DIR:-build_node}"
 BUILD_CONFIG=${BUILD_CONFIG:-RelWithDebInfo}
 PACKED_BUILD="${CHECKOUT_DIR}/${BUILD_DIR}/packed_build"
 CI_SCRIPTS="${CHECKOUT_DIR}/CI/scripts/macos"

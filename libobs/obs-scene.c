@@ -355,13 +355,25 @@ static inline uint32_t calc_cy(const struct obs_scene_item *item,
 	return (crop_cy > height) ? 2 : (height - crop_cy);
 }
 
-static inline void calc_scale(struct obs_scene_item *item,
+static inline void calc_scale_pos(struct obs_scene_item *item,
 			       uint32_t width, uint32_t height,
 			      struct vec2 *scale)
 {
 	if (item->full_screen) {
 		scale->x = obs->video.ovi.base_width * 1. / width;
 		scale->y = obs->video.ovi.base_height * 1. / height;
+		if (scale->x > scale->y)
+		{
+			scale->x = scale->y;
+			item->pos.x = (obs->video.ovi.base_width * 1.f - scale->x * width) / 2;
+			item->pos.y = 0.f;
+		}
+		else
+		{
+			scale->y = scale->x;
+			item->pos.y = (obs->video.ovi.base_height * 1.f - scale->y * height) / 2;
+			item->pos.x = 0.f;
+		}
 		vec2_copy(&item->scale, scale);
 	} else {
 		vec2_copy(scale, &item->scale);
@@ -387,7 +399,7 @@ static void update_item_transform(struct obs_scene_item *item, bool update_tex)
 	height = obs_source_get_height(item->source);
 	cx = calc_cx(item, width);
 	cy = calc_cy(item, height);
-	calc_scale(item, width, height, &scale);
+	calc_scale_pos(item, width, height, &scale);
 	item->last_width = width;
 	item->last_height = height;
 
