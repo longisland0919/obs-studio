@@ -374,6 +374,14 @@ static inline void calc_scale_pos(struct obs_scene_item *item,
 			item->pos.y = (obs->video.ovi.base_height * 1.f - scale->y * height) / 2;
 			item->pos.x = 0.f;
 		}
+		if (item->scale.x < 0) {
+			scale->x = -scale->x;
+			item->pos.x = obs->video.ovi.base_width - item->pos.x;
+		}
+		if (item->scale.y < 0) {
+			scale->y = -scale->y;
+			item->pos.y = obs->video.ovi.base_height - item->pos.y;
+		}
 		vec2_copy(&item->scale, scale);
 	} else {
 		vec2_copy(scale, &item->scale);
